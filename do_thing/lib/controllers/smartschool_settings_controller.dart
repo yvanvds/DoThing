@@ -36,7 +36,8 @@ class SmartschoolSettingsController extends AsyncNotifier<SmartschoolSettings> {
         username: data['username'] as String? ?? '',
         password: data['password'] as String? ?? '',
         url: data['url'] as String? ?? '',
-        birthday: data['birthday'] as String? ?? '',
+        mfaSecret:
+            data['mfaSecret'] as String? ?? data['birthday'] as String? ?? '',
       );
     } catch (_) {
       return const SmartschoolSettings();
@@ -54,7 +55,7 @@ class SmartschoolSettingsController extends AsyncNotifier<SmartschoolSettings> {
         'username': settings.username,
         'password': settings.password,
         'url': settings.url,
-        'birthday': settings.birthday,
+        'mfaSecret': settings.mfaSecret,
       });
       await file.writeAsString(payload, flush: true);
     } catch (_) {}
@@ -62,10 +63,9 @@ class SmartschoolSettingsController extends AsyncNotifier<SmartschoolSettings> {
 
   Future<File> _getSettingsFile() async {
     final appData = Platform.environment['APPDATA'];
-    final basePath =
-        (appData != null && appData.isNotEmpty)
-            ? appData
-            : Directory.current.path;
+    final basePath = (appData != null && appData.isNotEmpty)
+        ? appData
+        : Directory.current.path;
     final settingsDir = Directory(
       '$basePath${Platform.pathSeparator}$_appFolderName',
     );

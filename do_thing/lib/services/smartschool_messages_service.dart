@@ -1,0 +1,265 @@
+import 'dart:async';
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../controllers/status_controller.dart';
+import '../models/smartschool_message.dart';
+export '../models/smartschool_message.dart' show SmartschoolMessageHeader;
+import 'smartschool_auth_service.dart';
+import 'smartschool_bridge.dart';
+
+/// Convenience Riverpod wrapper that exposes Smartschool message operations.
+///
+/// All methods require an active connection via [smartschoolAuthProvider].
+///
+/// ```dart
+/// final svc = ref.read(smartschoolMessagesProvider.notifier);
+/// final headers = await svc.getHeaders();
+/// final thread  = await svc.getMessage(headers.first.id);
+/// ```
+class SmartschoolMessagesController extends Notifier<void> {
+  @override
+  void build() {}
+
+  SmartschoolBridge get _bridge =>
+      ref.read(smartschoolAuthProvider.notifier).bridge;
+
+  /// Fetch message headers for the given [boxType].
+  ///
+  /// Pass [alreadySeenIds] to only receive new (unseen) messages.
+  Future<List<SmartschoolMessageHeader>> getHeaders({
+    SmartschoolBoxType boxType = SmartschoolBoxType.inbox,
+    List<int> alreadySeenIds = const [],
+  }) async {
+    final headers = await _bridge.getMessageHeaders(
+      boxType: boxType,
+      alreadySeenIds: alreadySeenIds,
+    );
+    if (headers.isNotEmpty) {
+      final msg = headers.length == 1 ? 'message' : 'messages';
+      ref
+          .read(statusProvider.notifier)
+          .add(StatusEntryType.success, 'Retrieved ${headers.length} $msg.');
+    }
+    return headers;
+  }
+
+  /// Fetch the full message thread for [messageId].
+  Future<List<SmartschoolMessageDetail>> getMessage(int messageId) async {
+    final message = await _bridge.getMessage(messageId);
+    if (message.isNotEmpty) {
+      ref
+          .read(statusProvider.notifier)
+          .add(
+            StatusEntryType.success,
+            'Loaded message: ${message.first.subject}',
+          );
+    }
+    return message;
+  }
+
+  /// Download all attachments for [messageId].
+  Future<List<SmartschoolAttachment>> getAttachments(int messageId) =>
+      _bridge.getAttachments(messageId);
+
+  /// Mark a message as unread.
+  Future<void> markUnread(int messageId) async {
+    await _bridge.markUnread(messageId);
+    ref
+        .read(statusProvider.notifier)
+        .add(StatusEntryType.info, 'Message marked as unread.');
+  }
+
+  /// Set a label / flag colour on a message.
+  Future<void> setLabel(int messageId, SmartschoolMessageLabel label) async {
+    await _bridge.setLabel(messageId, label);
+    ref
+        .read(statusProvider.notifier)
+        .add(StatusEntryType.info, 'Message labeled: ${label.name}.');
+  }
+
+  /// Archive a message (or list of message IDs).
+  Future<void> archive(dynamic messageId) async {
+    await _bridge.archive(messageId);
+    final count = messageId is List ? messageId.length : 1;
+    final msg = count == 1 ? 'message' : 'messages';
+    ref
+        .read(statusProvider.notifier)
+        .add(StatusEntryType.success, 'Archived $count $msg.');
+  }
+
+  /// Move a message to the trash.
+  Future<void> trash(int messageId) async {
+    await _bridge.trash(messageId);
+    ref
+        .read(statusProvider.notifier)
+        .add(StatusEntryType.success, 'Message moved to trash.');
+  }
+}
+
+/// Provides Smartschool message operations.
+final smartschoolMessagesProvider =
+    NotifierProvider<SmartschoolMessagesController, void>(
+      SmartschoolMessagesController.new,
+    );
+
+/// In-memory cache of fetched full messages by ID.
+///
+/// Stores results to avoid re-fetching the same message on multiple clicks.
+/// Cache is cleared when the app restarts (in-memory, not persistent).
+class SmartschoolMessageCacheController
+    extends Notifier<Map<int, SmartschoolMessageDetail>> {
+  @override
+  Map<int, SmartschoolMessageDetail> build() => {};
+
+  /// Get a cached message, fetching if not present.
+  ///
+  /// If [messageId] is already in cache, returns immediately.
+  /// Otherwise fetches from Smartschool and caches the result.
+  Future<SmartschoolMessageDetail> getOrFetch(
+    int messageId,
+    SmartschoolBridge bridge,
+  ) async {
+    if (state.containsKey(messageId)) {
+      return state[messageId]!;
+    }
+
+    final messages = await bridge.getMessage(messageId);
+    if (messages.isEmpty) {
+      throw StateError('No message detail returned for ID $messageId');
+    }
+
+    final detail = messages.first;
+    state = {...state, messageId: detail};
+    return detail;
+  }
+
+  /// Clear the cache.
+  void clear() => state = {};
+}
+
+/// Provides the message cache.
+final smartschoolMessageCacheProvider =
+    NotifierProvider<
+      SmartschoolMessageCacheController,
+      Map<int, SmartschoolMessageDetail>
+    >(SmartschoolMessageCacheController.new);
+
+/// Manages polling for new messages every 5 minutes.
+///
+/// Tracks already-seen message IDs and periodically fetches new ones.
+/// New messages are accumulated in the state.
+class SmartschoolPollingController
+    extends Notifier<List<SmartschoolMessageHeader>> {
+  Timer? _pollTimer;
+  final List<int> _seenIds = [];
+  bool _isPolling = false;
+
+  @override
+  List<SmartschoolMessageHeader> build() {
+    ref.onDispose(() {
+      _pollTimer?.cancel();
+    });
+    return [];
+  }
+
+  /// Initialize polling with a set of already-seen message IDs.
+  ///
+  /// This prepares the polling mechanism and returns immediately.
+  /// The actual polling timer starts on the first call.
+  void initializeWithSeenIds(List<int> seenIds) {
+    _seenIds.clear();
+    _seenIds.addAll(seenIds);
+    _startPollingIfNeeded();
+  }
+
+  /// Start polling if not already running.
+  void _startPollingIfNeeded() {
+    if (_isPolling || _pollTimer != null) {
+      return;
+    }
+
+    _isPolling = true;
+
+    // Poll immediately, then every 5 minutes
+    _pollOnce();
+    _pollTimer = Timer.periodic(const Duration(minutes: 5), (_) {
+      _pollOnce();
+    });
+  }
+
+  /// Perform a single poll for new messages.
+  Future<void> _pollOnce() async {
+    try {
+      final messagesService = ref.read(smartschoolMessagesProvider.notifier);
+
+      final newMessages = await messagesService.getHeaders(
+        boxType: SmartschoolBoxType.inbox,
+        alreadySeenIds: _seenIds,
+      );
+
+      if (newMessages.isNotEmpty) {
+        // Add new IDs to seen list
+        for (final msg in newMessages) {
+          if (!_seenIds.contains(msg.id)) {
+            _seenIds.add(msg.id);
+          }
+        }
+
+        // Accumulate new messages in state
+        state = [...state, ...newMessages];
+
+        // Notify user of new messages
+        final msg = newMessages.length == 1 ? 'message' : 'messages';
+        ref
+            .read(statusProvider.notifier)
+            .add(
+              StatusEntryType.info,
+              '📬 ${newMessages.length} new $msg arrived.',
+            );
+      }
+    } catch (e) {
+      // Silently fail on poll error; will try again next interval
+      // (Avoid spamming the user with notifications for polling errors)
+    }
+  }
+
+  /// Clear accumulated new messages.
+  void clearNew() {
+    state = [];
+  }
+
+  /// Stop polling.
+  void stopPolling() {
+    _pollTimer?.cancel();
+    _pollTimer = null;
+    _isPolling = false;
+  }
+}
+
+/// Provides the polling service for new messages.
+///
+/// New messages polled every 5 minutes are accumulated here.
+/// Use [clearNew] to reset the list after processing them.
+final smartschoolPollingProvider =
+    NotifierProvider<
+      SmartschoolPollingController,
+      List<SmartschoolMessageHeader>
+    >(SmartschoolPollingController.new);
+
+/// Tracks which message header is currently selected in the panel.
+///
+/// Null means no message is selected.
+class _SelectedMessageController extends Notifier<SmartschoolMessageHeader?> {
+  @override
+  SmartschoolMessageHeader? build() => null;
+
+  void select(SmartschoolMessageHeader? header) {
+    state = header;
+  }
+}
+
+final smartschoolSelectedMessageProvider =
+    NotifierProvider<_SelectedMessageController, SmartschoolMessageHeader?>(
+      _SelectedMessageController.new,
+    );

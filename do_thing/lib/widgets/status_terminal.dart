@@ -3,13 +3,41 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../controllers/status_controller.dart';
 
-class StatusTerminal extends ConsumerWidget {
+class StatusTerminal extends ConsumerStatefulWidget {
   const StatusTerminal({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<StatusTerminal> createState() => _StatusTerminalState();
+}
+
+class _StatusTerminalState extends ConsumerState<StatusTerminal> {
+  final _scrollController = ScrollController();
+  int _lastEntryCount = 0;
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _scrollToBottom() {
+    if (!_scrollController.hasClients) return;
+    _scrollController.animateTo(
+      _scrollController.position.maxScrollExtent,
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOut,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final entries = ref.watch(statusProvider);
     final colorScheme = Theme.of(context).colorScheme;
+
+    if (entries.length > _lastEntryCount) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+    }
+    _lastEntryCount = entries.length;
 
     return Container(
       color: colorScheme.surfaceContainerHighest,
@@ -18,12 +46,18 @@ class StatusTerminal extends ConsumerWidget {
         children: [
           _TerminalHeader(),
           Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              itemCount: entries.length,
-              itemBuilder: (context, index) {
-                return _TerminalLine(entry: entries[index]);
-              },
+            child: SelectionArea(
+              child: ListView.builder(
+                controller: _scrollController,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
+                itemCount: entries.length,
+                itemBuilder: (context, index) {
+                  return _TerminalLine(entry: entries[index]);
+                },
+              ),
             ),
           ),
         ],
@@ -78,7 +112,7 @@ class _TerminalLine extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
+          SelectableText(
             '$prefix ',
             style: TextStyle(
               fontFamily: 'monospace',
@@ -87,7 +121,7 @@ class _TerminalLine extends StatelessWidget {
             ),
           ),
           Expanded(
-            child: Text(
+            child: SelectableText(
               entry.message,
               style: TextStyle(
                 fontFamily: 'monospace',

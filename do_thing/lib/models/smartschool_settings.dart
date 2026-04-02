@@ -4,7 +4,7 @@ class SmartschoolSettings {
     this.username = '',
     this.password = '',
     this.url = '',
-    this.birthday = '',
+    this.mfaSecret = '',
   });
 
   final String username;
@@ -13,18 +13,18 @@ class SmartschoolSettings {
   /// Base URL of the Smartschool instance, e.g. https://school.smartschool.be
   final String url;
 
-  /// Date of birth in YYYY-MM-DD format.
-  final String birthday;
+  /// Google Authenticator secret key used to generate TOTP codes.
+  final String mfaSecret;
 
   SmartschoolSettings copyWith({
     String? username,
     String? password,
     String? url,
-    String? birthday,
+    String? mfaSecret,
   }) => SmartschoolSettings(
     username: username ?? this.username,
     password: password ?? this.password,
     url: url ?? this.url,
-    birthday: birthday ?? this.birthday,
+    mfaSecret: mfaSecret ?? this.mfaSecret,
   );
 }

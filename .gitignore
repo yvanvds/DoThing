@@ -119,3 +119,4 @@ app.*.symbols
 !/dev/ci/**/Gemfile.lock
 python_test/credentials.yml
 python_test/thest_auth.py
+python_test/

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../controllers/context_panel_controller.dart';
 import '../settings/settings_page.dart';
+import 'panels/smartschool/smartschool_messages_panel.dart';
 
 class ContextPanel extends ConsumerWidget {
   const ContextPanel({super.key});
@@ -34,6 +35,7 @@ class ContextPanel extends ConsumerWidget {
         ),
       ),
       ContextView.settings => const SettingsPage(),
+      ContextView.messages => const SmartschoolMessagesPanel(),
     };
   }
 }

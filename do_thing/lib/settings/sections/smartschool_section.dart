@@ -17,7 +17,7 @@ class _SmartschoolSectionState extends ConsumerState<SmartschoolSection> {
   final _usernameCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   final _urlCtrl = TextEditingController();
-  final _birthdayCtrl = TextEditingController();
+  final _mfaCtrl = TextEditingController();
 
   bool _passwordVisible = false;
   bool _initialised = false;
@@ -36,7 +36,7 @@ class _SmartschoolSectionState extends ConsumerState<SmartschoolSection> {
     _usernameCtrl.dispose();
     _passwordCtrl.dispose();
     _urlCtrl.dispose();
-    _birthdayCtrl.dispose();
+    _mfaCtrl.dispose();
     super.dispose();
   }
 
@@ -47,7 +47,7 @@ class _SmartschoolSectionState extends ConsumerState<SmartschoolSection> {
       _usernameCtrl.text = settings.username;
       _passwordCtrl.text = settings.password;
       _urlCtrl.text = settings.url;
-      _birthdayCtrl.text = settings.birthday;
+      _mfaCtrl.text = settings.mfaSecret;
       _initialised = true;
     });
   }
@@ -65,36 +65,27 @@ class _SmartschoolSectionState extends ConsumerState<SmartschoolSection> {
             username: _usernameCtrl.text.trim(),
             password: _passwordCtrl.text,
             url: _urlCtrl.text.trim(),
-            birthday: _birthdayCtrl.text.trim(),
+            mfaSecret: _mfaCtrl.text.trim(),
           ),
         );
   }
 
-  Future<void> _pickDate() async {
-    // Parse existing value so the picker opens on it.
-    DateTime initial = DateTime.now();
-    try {
-      if (_birthdayCtrl.text.isNotEmpty) {
-        initial = DateTime.parse(_birthdayCtrl.text);
-      }
-    } catch (_) {}
-
-    final picked = await showDatePicker(
+  Future<void> _showMfaInfo() async {
+    await showDialog<void>(
       context: context,
-      initialDate: initial,
-      firstDate: DateTime(1920),
-      lastDate: DateTime.now(),
-      helpText: 'Select birthday',
+      builder: (context) => AlertDialog(
+        title: const Text('Google Authenticator secret key'),
+        content: const Text(
+          "This is the secret key shown in Smartschool when you set up Google Authenticator 2FA and click on 'I have no camera'.",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
     );
-
-    if (picked != null && mounted) {
-      final formatted =
-          '${picked.year.toString().padLeft(4, '0')}-'
-          '${picked.month.toString().padLeft(2, '0')}-'
-          '${picked.day.toString().padLeft(2, '0')}';
-      setState(() => _birthdayCtrl.text = formatted);
-      _schedSave();
-    }
   }
 
   @override
@@ -145,21 +136,23 @@ class _SmartschoolSectionState extends ConsumerState<SmartschoolSection> {
           _SettingsField(
             controller: _urlCtrl,
             label: 'School URL',
-            hint: 'https://yourschool.smartschool.be',
+            hint: 'yourschool.smartschool.be',
             icon: Icons.link_outlined,
             onChanged: (_) => _schedSave(),
           ),
           const SizedBox(height: 14),
           _SettingsField(
-            controller: _birthdayCtrl,
-            label: 'Birthday',
-            hint: 'YYYY-MM-DD',
-            icon: Icons.cake_outlined,
+            controller: _mfaCtrl,
+            label: 'Google Auth secret',
+            hint: 'Paste secret key',
+            icon: Icons.key_outlined,
             onChanged: (_) => _schedSave(),
-            suffixIcon: IconButton(
-              icon: const Icon(Icons.calendar_today_outlined, size: 18),
-              onPressed: _pickDate,
-              tooltip: 'Pick date',
+            labelTrailing: IconButton(
+              icon: const Icon(Icons.info_outline, size: 16),
+              onPressed: _showMfaInfo,
+              tooltip: 'What is this?',
+              visualDensity: VisualDensity.compact,
+              splashRadius: 16,
             ),
           ),
         ],
@@ -181,6 +174,7 @@ class _SettingsField extends StatelessWidget {
     required this.onChanged,
     this.obscureText = false,
     this.suffixIcon,
+    this.labelTrailing,
   });
 
   final TextEditingController controller;
@@ -190,6 +184,7 @@ class _SettingsField extends StatelessWidget {
   final ValueChanged<String> onChanged;
   final bool obscureText;
   final Widget? suffixIcon;
+  final Widget? labelTrailing;
 
   @override
   Widget build(BuildContext context) {
@@ -199,7 +194,7 @@ class _SettingsField extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         SizedBox(
-          width: 120,
+          width: 200,
           child: Row(
             children: [
               Icon(icon, size: 16, color: colorScheme.onSurfaceVariant),
@@ -211,6 +206,10 @@ class _SettingsField extends StatelessWidget {
                   color: colorScheme.onSurfaceVariant,
                 ),
               ),
+              if (labelTrailing != null) ...[
+                const SizedBox(width: 2),
+                labelTrailing!,
+              ],
             ],
           ),
         ),

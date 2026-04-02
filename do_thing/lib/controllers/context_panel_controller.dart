@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 /// The view currently shown inside the context panel.
 ///
 /// Add new entries here as new views are created.
-enum ContextView { empty, settings }
+enum ContextView { empty, settings, messages }
 
 /// Provides the current [ContextView] to the widget tree.
 final contextPanelProvider =

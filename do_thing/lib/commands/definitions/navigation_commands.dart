@@ -23,4 +23,13 @@ List<AppCommand> navigationCommands() => [
       ref.read(contextPanelProvider.notifier).show(ContextView.settings);
     },
   ),
+  AppCommand(
+    id: 'openMessages',
+    label: 'Open Messages',
+    description: 'Open Smartschool messages panel',
+    icon: Icons.mail_outline,
+    execute: (ref) async {
+      ref.read(contextPanelProvider.notifier).show(ContextView.messages);
+    },
+  ),
 ];
