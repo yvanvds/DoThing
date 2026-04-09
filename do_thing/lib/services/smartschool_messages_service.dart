@@ -190,6 +190,8 @@ class SmartschoolPollingController
 
   /// Perform a single poll for new messages.
   Future<void> _pollOnce() async {
+    var foundNewMessages = false;
+
     try {
       final messagesService = ref.read(smartschoolMessagesProvider.notifier);
 
@@ -199,6 +201,8 @@ class SmartschoolPollingController
       );
 
       if (newMessages.isNotEmpty) {
+        foundNewMessages = true;
+
         // Add new IDs to seen list
         for (final msg in newMessages) {
           if (!_seenIds.contains(msg.id)) {
@@ -221,6 +225,11 @@ class SmartschoolPollingController
     } catch (e) {
       // Silently fail on poll error; will try again next interval
       // (Avoid spamming the user with notifications for polling errors)
+    }
+
+    // Emit a state change on every poll tick so listeners can refresh UI.
+    if (!foundNewMessages) {
+      state = [...state];
     }
   }
 

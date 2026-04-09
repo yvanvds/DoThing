@@ -17,6 +17,51 @@ import '../services/smartschool_messages_service.dart';
 class SmartschoolInboxController extends AsyncNotifier<int> {
   @override
   Future<int> build() async {
+    try {
+      final headers = await _fetchInboxHeaders();
+      return _unreadCountFromHeaders(headers);
+    } catch (error) {
+      ref
+          .read(statusProvider.notifier)
+          .add(StatusEntryType.error, _friendlyInboxError(error));
+      return 0;
+    }
+  }
+
+  /// Manual refresh for future usage.
+  Future<void> refreshInbox() async {
+    await refreshInboxAndGetHeaders();
+  }
+
+  /// Refresh inbox and return latest headers.
+  ///
+  /// When [showLoading] is false, keeps the current state visible while
+  /// refreshing in the background.
+  Future<List<SmartschoolMessageHeader>> refreshInboxAndGetHeaders({
+    bool showLoading = true,
+  }) async {
+    if (showLoading) {
+      state = const AsyncLoading();
+    }
+
+    try {
+      final headers = await _fetchInboxHeaders();
+      state = AsyncData(_unreadCountFromHeaders(headers));
+      return headers;
+    } catch (error) {
+      ref
+          .read(statusProvider.notifier)
+          .add(StatusEntryType.error, _friendlyInboxError(error));
+
+      if (showLoading) {
+        state = const AsyncData(0);
+      }
+
+      return const [];
+    }
+  }
+
+  Future<List<SmartschoolMessageHeader>> _fetchInboxHeaders() async {
     final status = ref.read(statusProvider.notifier);
 
     await ref.read(smartschoolAuthProvider.notifier).connect();
@@ -31,49 +76,20 @@ class SmartschoolInboxController extends AsyncNotifier<int> {
         StatusEntryType.warning,
         'Inbox fetch skipped because Smartschool is not connected.',
       );
-      return 0;
+      return const [];
     }
 
-    try {
-      final headers = await ref
-          .read(smartschoolMessagesProvider.notifier)
-          .getHeaders(boxType: SmartschoolBoxType.inbox);
+    final headers = await ref
+        .read(smartschoolMessagesProvider.notifier)
+        .getHeaders(boxType: SmartschoolBoxType.inbox);
 
-      // Initialize polling with the seen message IDs
-      final messageIds = headers.map((h) => h.id).toList();
-      ref
-          .read(smartschoolPollingProvider.notifier)
-          .initializeWithSeenIds(messageIds);
+    // Initialize polling with the seen message IDs
+    final messageIds = headers.map((h) => h.id).toList();
+    ref
+        .read(smartschoolPollingProvider.notifier)
+        .initializeWithSeenIds(messageIds);
 
-      return _unreadCountFromHeaders(headers);
-    } catch (error) {
-      status.add(StatusEntryType.error, _friendlyInboxError(error));
-      return 0;
-    }
-  }
-
-  /// Manual refresh for future usage.
-  Future<void> refreshInbox() async {
-    final status = ref.read(statusProvider.notifier);
-    state = const AsyncLoading();
-    state = await AsyncValue.guard(() async {
-      try {
-        final headers = await ref
-            .read(smartschoolMessagesProvider.notifier)
-            .getHeaders(boxType: SmartschoolBoxType.inbox);
-
-        // Reinitialize polling with updated message IDs
-        final messageIds = headers.map((h) => h.id).toList();
-        ref
-            .read(smartschoolPollingProvider.notifier)
-            .initializeWithSeenIds(messageIds);
-
-        return _unreadCountFromHeaders(headers);
-      } catch (error) {
-        status.add(StatusEntryType.error, _friendlyInboxError(error));
-        return 0;
-      }
-    });
+    return headers;
   }
 
   int _unreadCountFromHeaders(List<SmartschoolMessageHeader> headers) {

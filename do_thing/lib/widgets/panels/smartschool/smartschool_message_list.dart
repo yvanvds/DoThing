@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../controllers/smartschool_inbox_controller.dart';
 import '../../../controllers/status_controller.dart';
-import '../../../models/smartschool_message.dart';
-import '../../../services/smartschool_auth_service.dart';
 import '../../../services/smartschool_messages_service.dart';
 import 'smartschool_message_header_tile.dart';
 
@@ -25,25 +24,20 @@ class _SmartschoolMessageListState
   void initState() {
     super.initState();
     _refresh();
+
+    ref.listenManual(smartschoolPollingProvider, (previous, next) {
+      if (!mounted) return;
+      if (next != previous) {
+        _refresh();
+      }
+    });
   }
 
   Future<List<SmartschoolMessageHeader>> _loadHeaders() async {
-    await ref.read(smartschoolAuthProvider.notifier).connect();
-
-    final connection = ref.read(smartschoolAuthProvider);
-    final connected = connection.maybeWhen(
-      data: (value) => value == SmartschoolConnectionState.connected,
-      orElse: () => false,
-    );
-
-    if (!connected) {
-      return const [];
-    }
-
     try {
       return await ref
-          .read(smartschoolMessagesProvider.notifier)
-          .getHeaders(boxType: SmartschoolBoxType.inbox);
+          .read(smartschoolInboxProvider.notifier)
+          .refreshInboxAndGetHeaders(showLoading: false);
     } catch (error) {
       ref
           .read(statusProvider.notifier)

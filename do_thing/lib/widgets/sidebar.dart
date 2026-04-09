@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../commands/command_bus.dart';
 import '../controllers/smartschool_inbox_controller.dart';
+import '../services/smartschool_messages_service.dart';
 
 class Sidebar extends ConsumerWidget {
   const Sidebar({super.key});
@@ -13,6 +14,15 @@ class Sidebar extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final bus = ref.read(commandBusProvider);
     final colorScheme = Theme.of(context).colorScheme;
+
+    ref.listen(smartschoolPollingProvider, (previous, next) {
+      if (next != previous) {
+        ref
+            .read(smartschoolInboxProvider.notifier)
+            .refreshInboxAndGetHeaders(showLoading: false);
+      }
+    });
+
     final unreadCountAsync = ref.watch(smartschoolInboxProvider);
     final unreadCount = unreadCountAsync.asData?.value ?? 0;
 
