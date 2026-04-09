@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../models/smartschool_message.dart';
+import '../../../controllers/smartschool_inbox_controller.dart';
 import '../../../services/smartschool_messages_service.dart';
 
 class SmartschoolMessageHeaderTile extends ConsumerStatefulWidget {
@@ -41,11 +41,7 @@ class _SmartschoolMessageHeaderTileState
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: () {
-            ref
-                .read(smartschoolSelectedMessageProvider.notifier)
-                .select(header);
-          },
+          onTap: _handleOpenMessage,
           child: Container(
             decoration: BoxDecoration(
               color: isSelected
@@ -56,89 +52,100 @@ class _SmartschoolMessageHeaderTileState
               ),
             ),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
+            child: Stack(
               children: [
-                _SenderAvatar(header: header),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    _SenderAvatar(header: header),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Expanded(
-                            child: Text(
-                              header.subject,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: header.unread
-                                    ? FontWeight.w700
-                                    : FontWeight.w500,
-                                color: subjectColor,
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  header.subject,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: header.unread
+                                        ? FontWeight.w700
+                                        : FontWeight.w500,
+                                    color: subjectColor,
+                                  ),
+                                ),
                               ),
-                            ),
+                              const SizedBox(width: 8),
+                              Text(
+                                _formatDate(header.date),
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(width: 8),
-                          Text(
-                            _formatDate(header.date),
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: colorScheme.onSurfaceVariant,
-                            ),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  header.from,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ),
+                              if (header.hasReply)
+                                Icon(
+                                  Icons.reply,
+                                  size: 14,
+                                  color: colorScheme.onSurfaceVariant,
+                                ),
+                              if (header.hasForward) ...[
+                                const SizedBox(width: 6),
+                                Icon(
+                                  Icons.forward,
+                                  size: 14,
+                                  color: colorScheme.onSurfaceVariant,
+                                ),
+                              ],
+                              if (header.hasAttachment) ...[
+                                const SizedBox(width: 6),
+                                Icon(
+                                  Icons.attach_file,
+                                  size: 14,
+                                  color: colorScheme.onSurfaceVariant,
+                                ),
+                              ],
+                            ],
                           ),
                         ],
                       ),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              header.from,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                          ),
-                          if (header.hasReply)
-                            Icon(
-                              Icons.reply,
-                              size: 14,
-                              color: colorScheme.onSurfaceVariant,
-                            ),
-                          if (header.hasForward) ...[
-                            const SizedBox(width: 6),
-                            Icon(
-                              Icons.forward,
-                              size: 14,
-                              color: colorScheme.onSurfaceVariant,
-                            ),
-                          ],
-                          if (header.hasAttachment) ...[
-                            const SizedBox(width: 6),
-                            Icon(
-                              Icons.attach_file,
-                              size: 14,
-                              color: colorScheme.onSurfaceVariant,
-                            ),
-                          ],
-                        ],
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
                 if (_isHovered)
-                  _ActionButtons(
-                    header: header,
-                    onArchive: () => _handleArchive(),
-                    onTrash: () => _handleTrash(),
-                    onMarkUnread: () => _handleMarkUnread(),
+                  Positioned(
+                    right: 0,
+                    top: 0,
+                    bottom: 0,
+                    child: Center(
+                      child: _ActionButtons(
+                        header: header,
+                        onArchive: () => _handleArchive(),
+                        onTrash: () => _handleTrash(),
+                        onMarkUnread: () => _handleMarkUnread(),
+                      ),
+                    ),
                   ),
               ],
             ),
@@ -188,27 +195,47 @@ class _SmartschoolMessageHeaderTileState
     }
   }
 
+  Future<void> _handleOpenMessage() async {
+    final currentHeader = widget.header;
+
+    if (!currentHeader.unread) {
+      ref
+          .read(smartschoolSelectedMessageProvider.notifier)
+          .select(currentHeader);
+      return;
+    }
+
+    final readHeader = _copyHeaderWithUnread(currentHeader, unread: false);
+
+    widget.onHeaderUpdated(readHeader);
+    ref.read(smartschoolSelectedMessageProvider.notifier).select(readHeader);
+
+    try {
+      await ref
+          .read(smartschoolMessagesProvider.notifier)
+          .markRead(currentHeader.id);
+      await ref
+          .read(smartschoolInboxProvider.notifier)
+          .refreshInboxAndGetHeaders(showLoading: false);
+    } catch (e) {
+      final unreadHeader = _copyHeaderWithUnread(currentHeader, unread: true);
+      widget.onHeaderUpdated(unreadHeader);
+      ref
+          .read(smartschoolSelectedMessageProvider.notifier)
+          .select(unreadHeader);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to mark message as read: $e')),
+        );
+      }
+    }
+  }
+
   Future<void> _handleMarkUnread() async {
     try {
       // Update local state immediately
-      final updatedHeader = SmartschoolMessageHeader(
-        id: widget.header.id,
-        from: widget.header.from,
-        fromImage: widget.header.fromImage,
-        subject: widget.header.subject,
-        date: widget.header.date,
-        status: widget.header.status,
-        unread: true,
-        hasAttachment: widget.header.hasAttachment,
-        label: widget.header.label,
-        deleted: widget.header.deleted,
-        allowReply: widget.header.allowReply,
-        allowReplyEnabled: widget.header.allowReplyEnabled,
-        hasReply: widget.header.hasReply,
-        hasForward: widget.header.hasForward,
-        realBox: widget.header.realBox,
-        sendDate: widget.header.sendDate,
-      );
+      final updatedHeader = _copyHeaderWithUnread(widget.header, unread: true);
 
       widget.onHeaderUpdated(updatedHeader);
 
@@ -216,6 +243,9 @@ class _SmartschoolMessageHeaderTileState
       await ref
           .read(smartschoolMessagesProvider.notifier)
           .markUnread(widget.header.id);
+      await ref
+          .read(smartschoolInboxProvider.notifier)
+          .refreshInboxAndGetHeaders(showLoading: false);
 
       if (mounted) setState(() => _isHovered = false);
     } catch (e) {
@@ -225,6 +255,30 @@ class _SmartschoolMessageHeaderTileState
         ).showSnackBar(SnackBar(content: Text('Failed to mark unread: $e')));
       }
     }
+  }
+
+  SmartschoolMessageHeader _copyHeaderWithUnread(
+    SmartschoolMessageHeader source, {
+    required bool unread,
+  }) {
+    return SmartschoolMessageHeader(
+      id: source.id,
+      from: source.from,
+      fromImage: source.fromImage,
+      subject: source.subject,
+      date: source.date,
+      status: source.status,
+      unread: unread,
+      hasAttachment: source.hasAttachment,
+      label: source.label,
+      deleted: source.deleted,
+      allowReply: source.allowReply,
+      allowReplyEnabled: source.allowReplyEnabled,
+      hasReply: source.hasReply,
+      hasForward: source.hasForward,
+      realBox: source.realBox,
+      sendDate: source.sendDate,
+    );
   }
 }
 
@@ -247,7 +301,7 @@ class _ActionButtons extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: colorScheme.surfaceContainer,
+        color: colorScheme.tertiaryContainer,
         borderRadius: BorderRadius.circular(8),
         boxShadow: [
           BoxShadow(

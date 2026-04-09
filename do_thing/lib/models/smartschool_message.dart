@@ -219,6 +219,58 @@ class SmartschoolMessageDetail {
   }
 }
 
+/// A group of messages sharing the same normalised subject line.
+///
+/// Used to present a threaded / conversation view in the UI.
+class SmartschoolMessageThread {
+  const SmartschoolMessageThread({
+    required this.threadKey,
+    required this.subject,
+    required this.latestDate,
+    required this.messageCount,
+    required this.hasUnread,
+    required this.hasReply,
+    required this.messages,
+  });
+
+  /// Normalised (lower-case, prefix-stripped) subject used for grouping.
+  final String threadKey;
+
+  /// Display subject taken from the most recent message.
+  final String subject;
+
+  /// ISO-8601 date of the newest message in this thread.
+  final String latestDate;
+
+  /// Total number of messages in the thread.
+  final int messageCount;
+
+  /// True when at least one message in the thread is unread.
+  final bool hasUnread;
+
+  /// True when at least one message in the thread has a reply.
+  final bool hasReply;
+
+  /// Individual message headers, newest first.
+  final List<SmartschoolMessageHeader> messages;
+
+  factory SmartschoolMessageThread.fromJson(Map<String, dynamic> json) {
+    final rawMessages = json['messages'] as List<dynamic>? ?? [];
+    return SmartschoolMessageThread(
+      threadKey: json['thread_key'] as String? ?? '',
+      subject: json['subject'] as String? ?? '',
+      latestDate: json['latest_date'] as String? ?? '',
+      messageCount: json['message_count'] as int? ?? 1,
+      hasUnread: json['has_unread'] as bool? ?? false,
+      hasReply: json['has_reply'] as bool? ?? false,
+      messages: rawMessages
+          .cast<Map<String, dynamic>>()
+          .map(SmartschoolMessageHeader.fromJson)
+          .toList(),
+    );
+  }
+}
+
 /// Attachment metadata + optional content.
 class SmartschoolAttachment {
   const SmartschoolAttachment({

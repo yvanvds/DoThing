@@ -224,6 +224,71 @@ def handle(cmd):
             messages.append(m)
         return {'messages': messages}
 
+    if action == 'get_threaded_headers':
+        if session is None:
+            return {'error': 'Not authenticated'}
+        import re
+        from collections import defaultdict
+        from smartschool import MessageHeaders, BoxType
+        box = getattr(BoxType, cmd.get('box_type', 'INBOX'))
+        kwargs = {'box_type': box}
+        seen = cmd.get('already_seen_ids')
+        if seen:
+            kwargs['already_seen_message_ids'] = seen
+        headers = []
+        for h in MessageHeaders(session, **kwargs):
+            headers.append({
+                'id': h.id,
+                'from': h.from_,
+                'from_image': h.from_image,
+                'subject': h.subject,
+                'date': str(h.date),
+                'status': h.status,
+                'unread': h.unread,
+                'attachment': h.attachment,
+                'label': h.label,
+                'deleted': h.deleted,
+                'allowreply': h.allowreply,
+                'allowreplyenabled': h.allowreplyenabled,
+                'hasreply': h.hasreply,
+                'has_forward': h.has_forward,
+                'real_box': h.real_box,
+                'send_date': str(h.send_date) if h.send_date is not None else None,
+            })
+
+        def _normalize_subject(subj):
+            if not subj:
+                return ''
+            s = subj.strip().lower()
+            prev = None
+            while prev != s:
+                prev = s
+                s = re.sub(r'^(re|fw|fwd)\s*:\s*', '', s).strip()
+            return s
+
+        groups = defaultdict(list)
+        for h in headers:
+            key = _normalize_subject(h['subject'])
+            groups[key].append(h)
+
+        threads = []
+        for key, msgs in groups.items():
+            msgs.sort(key=lambda m: m['date'], reverse=True)
+            any_unread = any(not m['unread'] for m in msgs)
+            any_has_reply = any(m['hasreply'] for m in msgs)
+            threads.append({
+                'thread_key': key,
+                'subject': msgs[0]['subject'],
+                'latest_date': msgs[0]['date'],
+                'message_count': len(msgs),
+                'has_unread': any_unread,
+                'has_reply': any_has_reply,
+                'messages': msgs,
+            })
+
+        threads.sort(key=lambda t: t['latest_date'], reverse=True)
+        return {'threads': threads}
+
     if action == 'get_attachments':
         if session is None:
             return {'error': 'Not authenticated'}

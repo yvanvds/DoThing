@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../controllers/smartschool_inbox_controller.dart';
 import '../../../controllers/status_controller.dart';
+import '../../../models/smartschool_message.dart';
 import '../../../services/smartschool_messages_service.dart';
 import 'smartschool_message_header_tile.dart';
 
@@ -18,7 +19,10 @@ class _SmartschoolMessageListState
     extends ConsumerState<SmartschoolMessageList> {
   bool _isLoading = true;
   String? _errorText;
-  List<SmartschoolMessageHeader> _headers = const [];
+  List<SmartschoolMessageThread> _threads = const [];
+
+  /// Thread keys that are currently expanded; all others are collapsed.
+  final Set<String> _expandedThreads = {};
 
   @override
   void initState() {
@@ -33,19 +37,6 @@ class _SmartschoolMessageListState
     });
   }
 
-  Future<List<SmartschoolMessageHeader>> _loadHeaders() async {
-    try {
-      return await ref
-          .read(smartschoolInboxProvider.notifier)
-          .refreshInboxAndGetHeaders(showLoading: false);
-    } catch (error) {
-      ref
-          .read(statusProvider.notifier)
-          .add(StatusEntryType.error, 'Failed to load messages: $error');
-      rethrow;
-    }
-  }
-
   Future<void> _refresh() async {
     setState(() {
       _isLoading = true;
@@ -53,13 +44,18 @@ class _SmartschoolMessageListState
     });
 
     try {
-      final headers = await _loadHeaders();
+      final threads = await ref
+          .read(smartschoolInboxProvider.notifier)
+          .refreshInboxAndGetThreads(showLoading: false);
       if (!mounted) return;
       setState(() {
-        _headers = headers;
+        _threads = threads;
         _isLoading = false;
       });
-    } catch (_) {
+    } catch (error) {
+      ref
+          .read(statusProvider.notifier)
+          .add(StatusEntryType.error, 'Failed to load messages: $error');
       if (!mounted) return;
       setState(() {
         _isLoading = false;
@@ -69,9 +65,23 @@ class _SmartschoolMessageListState
   }
 
   void _removeHeaderFromList(int messageId) {
-    setState(() {
-      _headers = _headers.where((header) => header.id != messageId).toList();
-    });
+    final updated = <SmartschoolMessageThread>[];
+    for (final thread in _threads) {
+      final filtered = thread.messages.where((h) => h.id != messageId).toList();
+      if (filtered.isEmpty) continue;
+      updated.add(
+        SmartschoolMessageThread(
+          threadKey: thread.threadKey,
+          subject: filtered.first.subject,
+          latestDate: filtered.first.date,
+          messageCount: filtered.length,
+          hasUnread: filtered.any((h) => h.unread),
+          hasReply: thread.hasReply,
+          messages: filtered,
+        ),
+      );
+    }
+    setState(() => _threads = updated);
 
     final selected = ref.read(smartschoolSelectedMessageProvider);
     if (selected?.id == messageId) {
@@ -80,15 +90,28 @@ class _SmartschoolMessageListState
   }
 
   void _updateHeaderInList(SmartschoolMessageHeader updatedHeader) {
-    final index = _headers.indexWhere((h) => h.id == updatedHeader.id);
-    if (index == -1) return;
-
-    final updatedList = [..._headers];
-    updatedList[index] = updatedHeader;
-
-    setState(() {
-      _headers = updatedList;
-    });
+    final updated = <SmartschoolMessageThread>[];
+    for (final thread in _threads) {
+      final idx = thread.messages.indexWhere((h) => h.id == updatedHeader.id);
+      if (idx == -1) {
+        updated.add(thread);
+        continue;
+      }
+      final msgs = [...thread.messages];
+      msgs[idx] = updatedHeader;
+      updated.add(
+        SmartschoolMessageThread(
+          threadKey: thread.threadKey,
+          subject: thread.subject,
+          latestDate: thread.latestDate,
+          messageCount: msgs.length,
+          hasUnread: msgs.any((h) => h.unread),
+          hasReply: thread.hasReply,
+          messages: msgs,
+        ),
+      );
+    }
+    setState(() => _threads = updated);
 
     final selected = ref.read(smartschoolSelectedMessageProvider);
     if (selected?.id == updatedHeader.id) {
@@ -104,6 +127,7 @@ class _SmartschoolMessageListState
 
     return Column(
       children: [
+        // ── header bar ────────────────────────────────────────────────────
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
           decoration: BoxDecoration(
@@ -128,6 +152,8 @@ class _SmartschoolMessageListState
             ],
           ),
         ),
+
+        // ── body ──────────────────────────────────────────────────────────
         Expanded(
           child: _isLoading
               ? const Center(child: CircularProgressIndicator())
@@ -139,7 +165,7 @@ class _SmartschoolMessageListState
                     style: TextStyle(color: colorScheme.error, fontSize: 12),
                   ),
                 )
-              : _headers.isEmpty
+              : _threads.isEmpty
               ? Center(
                   child: Text(
                     'No messages',
@@ -150,10 +176,13 @@ class _SmartschoolMessageListState
                   ),
                 )
               : ListView.builder(
-                  itemCount: _headers.length,
+                  itemCount: _threads.length,
                   itemBuilder: (context, index) {
-                    return SmartschoolMessageHeaderTile(
-                      header: _headers[index],
+                    final thread = _threads[index];
+                    return _ThreadTile(
+                      thread: thread,
+                      isExpanded: _expandedThreads.contains(thread.threadKey),
+                      onToggleExpand: () => _toggleThread(thread.threadKey),
                       onRemoveFromList: _removeHeaderFromList,
                       onHeaderUpdated: _updateHeaderInList,
                     );
@@ -162,5 +191,174 @@ class _SmartschoolMessageListState
         ),
       ],
     );
+  }
+
+  void _toggleThread(String threadKey) {
+    setState(() {
+      if (_expandedThreads.contains(threadKey)) {
+        _expandedThreads.remove(threadKey);
+      } else {
+        _expandedThreads.add(threadKey);
+      }
+    });
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Thread tile – renders a single thread row (collapsed or expanded).
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ThreadTile extends StatelessWidget {
+  const _ThreadTile({
+    required this.thread,
+    required this.isExpanded,
+    required this.onToggleExpand,
+    required this.onRemoveFromList,
+    required this.onHeaderUpdated,
+  });
+
+  final SmartschoolMessageThread thread;
+  final bool isExpanded;
+  final VoidCallback onToggleExpand;
+  final ValueChanged<int> onRemoveFromList;
+  final ValueChanged<SmartschoolMessageHeader> onHeaderUpdated;
+
+  @override
+  Widget build(BuildContext context) {
+    // Single-message threads are rendered directly without grouping chrome.
+    if (thread.messageCount <= 1) {
+      return SmartschoolMessageHeaderTile(
+        header: thread.messages.first,
+        onRemoveFromList: onRemoveFromList,
+        onHeaderUpdated: onHeaderUpdated,
+      );
+    }
+
+    final colorScheme = Theme.of(context).colorScheme;
+    final newestMessage = thread.messages.first;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // ── collapsed summary row ───────────────────────────────────────
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onToggleExpand,
+            child: Container(
+              decoration: BoxDecoration(
+                color: thread.hasUnread
+                    ? colorScheme.primaryContainer.withValues(alpha: 0.15)
+                    : Colors.transparent,
+                border: Border(
+                  bottom: BorderSide(color: colorScheme.outlineVariant),
+                ),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              child: Row(
+                children: [
+                  Icon(
+                    isExpanded ? Icons.expand_less : Icons.expand_more,
+                    size: 18,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 1,
+                    ),
+                    decoration: BoxDecoration(
+                      color: colorScheme.primaryContainer,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '${thread.messageCount}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: colorScheme.onPrimaryContainer,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          thread.subject,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: thread.hasUnread
+                                ? FontWeight.w700
+                                : FontWeight.w500,
+                            color: thread.hasUnread
+                                ? colorScheme.primary
+                                : colorScheme.onSurface,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          newestMessage.from,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    _formatDate(newestMessage.date),
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+
+        // ── expanded children ──────────────────────────────────────────
+        if (isExpanded)
+          Container(
+            decoration: BoxDecoration(
+              border: Border(
+                left: BorderSide(
+                  color: colorScheme.primary.withValues(alpha: 0.3),
+                  width: 2,
+                ),
+              ),
+            ),
+            margin: const EdgeInsets.only(left: 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final header in thread.messages)
+                  SmartschoolMessageHeaderTile(
+                    header: header,
+                    onRemoveFromList: onRemoveFromList,
+                    onHeaderUpdated: onHeaderUpdated,
+                  ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  String _formatDate(String raw) {
+    final dt = DateTime.tryParse(raw);
+    if (dt == null) return raw;
+    String two(int value) => value.toString().padLeft(2, '0');
+    return '${two(dt.day)}/${two(dt.month)} ${two(dt.hour)}:${two(dt.minute)}';
   }
 }

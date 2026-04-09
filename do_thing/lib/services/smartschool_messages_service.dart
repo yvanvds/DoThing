@@ -44,6 +44,31 @@ class SmartschoolMessagesController extends Notifier<void> {
     return headers;
   }
 
+  /// Fetch message headers grouped into conversation threads.
+  ///
+  /// Each thread groups messages with the same normalised subject.
+  Future<List<SmartschoolMessageThread>> getThreadedHeaders({
+    SmartschoolBoxType boxType = SmartschoolBoxType.inbox,
+    List<int> alreadySeenIds = const [],
+  }) async {
+    final threads = await _bridge.getThreadedHeaders(
+      boxType: boxType,
+      alreadySeenIds: alreadySeenIds,
+    );
+    if (threads.isNotEmpty) {
+      final count = threads.fold<int>(0, (s, t) => s + t.messageCount);
+      final msg = count == 1 ? 'message' : 'messages';
+      final tMsg = threads.length == 1 ? 'thread' : 'threads';
+      ref
+          .read(statusProvider.notifier)
+          .add(
+            StatusEntryType.success,
+            'Retrieved $count $msg in ${threads.length} $tMsg.',
+          );
+    }
+    return threads;
+  }
+
   /// Fetch the full message thread for [messageId].
   Future<List<SmartschoolMessageDetail>> getMessage(int messageId) async {
     final message = await _bridge.getMessage(messageId);
@@ -68,6 +93,14 @@ class SmartschoolMessagesController extends Notifier<void> {
     ref
         .read(statusProvider.notifier)
         .add(StatusEntryType.info, 'Message marked as unread.');
+  }
+
+  /// Mark a message as read.
+  ///
+  /// Smartschool exposes this implicitly through "show message".
+  /// Triggering message fetch ensures backend read state is updated.
+  Future<void> markRead(int messageId) async {
+    await _bridge.getMessage(messageId);
   }
 
   /// Set a label / flag colour on a message.

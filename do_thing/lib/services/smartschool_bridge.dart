@@ -151,6 +151,24 @@ class SmartschoolBridge {
         .toList();
   }
 
+  /// Fetch message headers grouped into conversation threads.
+  Future<List<SmartschoolMessageThread>> getThreadedHeaders({
+    SmartschoolBoxType boxType = SmartschoolBoxType.inbox,
+    List<int> alreadySeenIds = const [],
+  }) async {
+    final res = _check(
+      await send('get_threaded_headers', {
+        'box_type': boxType.value,
+        if (alreadySeenIds.isNotEmpty) 'already_seen_ids': alreadySeenIds,
+      }),
+    );
+    final list = res['threads'] as List<dynamic>? ?? [];
+    return list
+        .cast<Map<String, dynamic>>()
+        .map(SmartschoolMessageThread.fromJson)
+        .toList();
+  }
+
   /// Fetch the full message thread for [messageId].
   Future<List<SmartschoolMessageDetail>> getMessage(int messageId) async {
     final res = _check(await send('get_message', {'message_id': messageId}));

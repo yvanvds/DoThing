@@ -61,6 +61,35 @@ class SmartschoolInboxController extends AsyncNotifier<int> {
     }
   }
 
+  /// Refresh inbox and return latest headers grouped into threads.
+  Future<List<SmartschoolMessageThread>> refreshInboxAndGetThreads({
+    bool showLoading = true,
+  }) async {
+    if (showLoading) {
+      state = const AsyncLoading();
+    }
+
+    try {
+      final threads = await _fetchInboxThreads();
+      final unread = threads.fold<int>(
+        0,
+        (sum, t) => sum + t.messages.where((h) => h.unread).length,
+      );
+      state = AsyncData(unread);
+      return threads;
+    } catch (error) {
+      ref
+          .read(statusProvider.notifier)
+          .add(StatusEntryType.error, _friendlyInboxError(error));
+
+      if (showLoading) {
+        state = const AsyncData(0);
+      }
+
+      return const [];
+    }
+  }
+
   Future<List<SmartschoolMessageHeader>> _fetchInboxHeaders() async {
     final status = ref.read(statusProvider.notifier);
 
@@ -90,6 +119,39 @@ class SmartschoolInboxController extends AsyncNotifier<int> {
         .initializeWithSeenIds(messageIds);
 
     return headers;
+  }
+
+  Future<List<SmartschoolMessageThread>> _fetchInboxThreads() async {
+    final status = ref.read(statusProvider.notifier);
+
+    await ref.read(smartschoolAuthProvider.notifier).connect();
+    final connection = ref.read(smartschoolAuthProvider);
+    final connected = connection.maybeWhen(
+      data: (value) => value == SmartschoolConnectionState.connected,
+      orElse: () => false,
+    );
+
+    if (!connected) {
+      status.add(
+        StatusEntryType.warning,
+        'Inbox fetch skipped because Smartschool is not connected.',
+      );
+      return const [];
+    }
+
+    final threads = await ref
+        .read(smartschoolMessagesProvider.notifier)
+        .getThreadedHeaders(boxType: SmartschoolBoxType.inbox);
+
+    // Initialize polling with all seen message IDs across threads
+    final messageIds = threads
+        .expand((t) => t.messages.map((m) => m.id))
+        .toList();
+    ref
+        .read(smartschoolPollingProvider.notifier)
+        .initializeWithSeenIds(messageIds);
+
+    return threads;
   }
 
   int _unreadCountFromHeaders(List<SmartschoolMessageHeader> headers) {
