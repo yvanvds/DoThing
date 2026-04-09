@@ -179,16 +179,34 @@ class SmartschoolBridge {
         .toList();
   }
 
-  /// Download all attachments for [messageId].
-  Future<List<SmartschoolAttachment>> getAttachments(int messageId) async {
+  /// List attachment metadata for [messageId] (without downloading bytes).
+  Future<List<SmartschoolAttachment>> listAttachments(int messageId) async {
     final res = _check(
-      await send('get_attachments', {'message_id': messageId}),
+      await send('list_attachments', {'message_id': messageId}),
     );
     final list = res['attachments'] as List<dynamic>? ?? [];
     return list
         .cast<Map<String, dynamic>>()
         .map(SmartschoolAttachment.fromJson)
         .toList();
+  }
+
+  /// Download a single attachment by [attachmentIndex] for [messageId].
+  Future<SmartschoolAttachment> downloadAttachment(
+    int messageId,
+    int attachmentIndex,
+  ) async {
+    final res = _check(
+      await send('download_attachment', {
+        'message_id': messageId,
+        'attachment_index': attachmentIndex,
+      }),
+    );
+    final item = res['attachment'] as Map<String, dynamic>?;
+    if (item == null) {
+      throw SmartschoolBridgeException('Invalid attachment response payload.');
+    }
+    return SmartschoolAttachment.fromJson(item);
   }
 
   /// Mark a message as unread.

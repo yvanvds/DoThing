@@ -289,20 +289,41 @@ def handle(cmd):
         threads.sort(key=lambda t: t['latest_date'], reverse=True)
         return {'threads': threads}
 
-    if action == 'get_attachments':
+    if action == 'list_attachments':
+        if session is None:
+            return {'error': 'Not authenticated'}
+        from smartschool import Attachments
+        attachments = []
+        for index, a in enumerate(Attachments(session, cmd['message_id'])):
+            attachments.append({
+                'index': index,
+                'name': a.name,
+                'size': a.size,
+            })
+        return {'attachments': attachments}
+
+    if action == 'download_attachment':
         if session is None:
             return {'error': 'Not authenticated'}
         from smartschool import Attachments
         import base64
-        attachments = []
-        for a in Attachments(session, cmd['message_id']):
-            content = a.download()
-            attachments.append({
-                'name': a.name,
-                'size': a.size,
-                'content_base64': base64.b64encode(content).decode('utf-8'),
-            })
-        return {'attachments': attachments}
+        wanted_index = int(cmd['attachment_index'])
+        for index, a in enumerate(Attachments(session, cmd['message_id'])):
+            if index == wanted_index:
+                response = session.get(
+                    f"/?module=Messages&file=download&fileID={a.file_id}&target=0"
+                )
+                response.raise_for_status()
+                content = response.content
+                return {
+                    'attachment': {
+                        'index': index,
+                        'name': a.name,
+                        'size': a.size,
+                        'content_base64': base64.b64encode(content).decode('utf-8'),
+                    },
+                }
+        return {'error': f'Attachment index not found: {wanted_index}'}
 
     # ── message operations ─────────────────────────────────────────────────
 

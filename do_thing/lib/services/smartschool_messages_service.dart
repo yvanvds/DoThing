@@ -83,9 +83,15 @@ class SmartschoolMessagesController extends Notifier<void> {
     return message;
   }
 
-  /// Download all attachments for [messageId].
-  Future<List<SmartschoolAttachment>> getAttachments(int messageId) =>
-      _bridge.getAttachments(messageId);
+  /// List attachment metadata for [messageId] (without file bytes).
+  Future<List<SmartschoolAttachment>> listAttachments(int messageId) =>
+      _bridge.listAttachments(messageId);
+
+  /// Download a single attachment by [attachmentIndex] for [messageId].
+  Future<SmartschoolAttachment> downloadAttachment(
+    int messageId,
+    int attachmentIndex,
+  ) => _bridge.downloadAttachment(messageId, attachmentIndex);
 
   /// Mark a message as unread.
   Future<void> markUnread(int messageId) async {

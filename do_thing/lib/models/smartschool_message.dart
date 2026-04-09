@@ -274,22 +274,72 @@ class SmartschoolMessageThread {
 /// Attachment metadata + optional content.
 class SmartschoolAttachment {
   const SmartschoolAttachment({
+    required this.index,
     required this.name,
     required this.size,
+    this.sizeLabel,
     this.contentBase64,
   });
 
+  final int index;
   final String name;
   final int size;
+  final String? sizeLabel;
 
   /// Base-64 encoded bytes of the file content (populated after download).
   final String? contentBase64;
 
   factory SmartschoolAttachment.fromJson(Map<String, dynamic> json) {
+    final rawSize = json['size'];
+    int parsedSize = 0;
+    String? parsedLabel;
+
+    if (rawSize is int) {
+      parsedSize = rawSize;
+    } else if (rawSize is num) {
+      parsedSize = rawSize.toInt();
+    } else if (rawSize is String) {
+      parsedLabel = rawSize;
+      parsedSize = _tryParseHumanReadableSize(rawSize) ?? 0;
+    }
+
     return SmartschoolAttachment(
+      index: json['index'] as int? ?? 0,
       name: json['name'] as String? ?? '',
-      size: json['size'] as int? ?? 0,
+      size: parsedSize,
+      sizeLabel: parsedLabel,
       contentBase64: json['content_base64'] as String?,
     );
+  }
+
+  static int? _tryParseHumanReadableSize(String input) {
+    final match = RegExp(
+      r'^\s*([0-9]+(?:\.[0-9]+)?)\s*([kmgt]?i?b)\s*$',
+      caseSensitive: false,
+    ).firstMatch(input);
+    if (match == null) {
+      final plain = int.tryParse(input.trim());
+      return plain;
+    }
+
+    final value = double.tryParse(match.group(1)!);
+    if (value == null) return null;
+    final unit = match.group(2)!.toLowerCase();
+
+    const multipliers = {
+      'b': 1,
+      'kb': 1000,
+      'kib': 1024,
+      'mb': 1000 * 1000,
+      'mib': 1024 * 1024,
+      'gb': 1000 * 1000 * 1000,
+      'gib': 1024 * 1024 * 1024,
+      'tb': 1000 * 1000 * 1000 * 1000,
+      'tib': 1024 * 1024 * 1024 * 1024,
+    };
+
+    final multiplier = multipliers[unit];
+    if (multiplier == null) return null;
+    return (value * multiplier).round();
   }
 }

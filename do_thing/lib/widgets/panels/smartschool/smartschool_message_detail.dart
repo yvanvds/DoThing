@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -18,6 +20,101 @@ class SmartschoolMessageDetailView extends ConsumerWidget {
 
   final SmartschoolMessageHeader header;
 
+  Future<_MessageDetailPayload> _loadPayload(
+    WidgetRef ref,
+    SmartschoolAuthController authNotifier,
+  ) async {
+    final detail = await ref
+        .read(smartschoolMessageCacheProvider.notifier)
+        .getOrFetch(header.id, authNotifier.bridge);
+    final attachments = await ref
+        .read(smartschoolMessagesProvider.notifier)
+        .listAttachments(header.id);
+    return _MessageDetailPayload(detail: detail, attachments: attachments);
+  }
+
+  Future<void> _handleAttachmentTap(
+    BuildContext context,
+    WidgetRef ref,
+    SmartschoolAttachment attachment,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final downloaded = await ref
+          .read(smartschoolMessagesProvider.notifier)
+          .downloadAttachment(header.id, attachment.index);
+
+      final encoded = downloaded.contentBase64;
+      if (encoded == null || encoded.isEmpty) {
+        throw StateError('No content received for attachment.');
+      }
+
+      final bytes = base64Decode(encoded);
+      final file = await _saveToDownloads(downloaded.name, bytes);
+
+      var opened = false;
+      final fileUri = Uri.file(file.path);
+      if (await canLaunchUrl(fileUri)) {
+        opened = await launchUrl(fileUri, mode: LaunchMode.externalApplication);
+      }
+
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            opened
+                ? 'Downloaded and opened ${downloaded.name}'
+                : 'Downloaded ${downloaded.name} to Downloads',
+          ),
+        ),
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Failed to download attachment: $e')),
+      );
+    }
+  }
+
+  Future<File> _saveToDownloads(String fileName, List<int> bytes) async {
+    final userProfile = Platform.environment['USERPROFILE'];
+    Directory targetDir;
+    if (userProfile != null && userProfile.isNotEmpty) {
+      final downloads = Directory('$userProfile\\Downloads');
+      if (downloads.existsSync()) {
+        targetDir = downloads;
+      } else {
+        targetDir = Directory.current;
+      }
+    } else {
+      targetDir = Directory.current;
+    }
+
+    if (!targetDir.existsSync()) {
+      targetDir.createSync(recursive: true);
+    }
+
+    final uniquePath = _buildUniquePath(targetDir.path, fileName);
+    final file = File(uniquePath);
+    await file.writeAsBytes(bytes, flush: true);
+    return file;
+  }
+
+  String _buildUniquePath(String directoryPath, String fileName) {
+    final safeName = fileName.trim().isEmpty ? 'attachment.bin' : fileName;
+    final dotIndex = safeName.lastIndexOf('.');
+    final hasExtension = dotIndex > 0 && dotIndex < safeName.length - 1;
+    final baseName = hasExtension ? safeName.substring(0, dotIndex) : safeName;
+    final extension = hasExtension ? safeName.substring(dotIndex) : '';
+
+    var candidate = '$directoryPath${Platform.pathSeparator}$safeName';
+    var counter = 1;
+    while (File(candidate).existsSync()) {
+      candidate =
+          '$directoryPath${Platform.pathSeparator}$baseName ($counter)$extension';
+      counter++;
+    }
+    return candidate;
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final cache = ref.watch(smartschoolMessageCacheProvider);
@@ -25,14 +122,33 @@ class SmartschoolMessageDetailView extends ConsumerWidget {
 
     // Check if already cached
     if (cache.containsKey(header.id)) {
-      return _buildMessage(context, cache[header.id]!);
+      return FutureBuilder<List<SmartschoolAttachment>>(
+        future: ref
+            .read(smartschoolMessagesProvider.notifier)
+            .listAttachments(header.id),
+        builder: (context, attachmentsSnapshot) {
+          if (attachmentsSnapshot.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: SelectableText(
+                  'Error loading attachments:\n${attachmentsSnapshot.error}',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+                ),
+              ),
+            );
+          }
+          final attachments = attachmentsSnapshot.data ?? const [];
+          return _buildMessage(context, ref, cache[header.id]!, attachments);
+        },
+      );
     }
 
-    // Otherwise, fetch (with cache check inside)
-    return FutureBuilder<SmartschoolMessageDetail>(
-      future: ref
-          .read(smartschoolMessageCacheProvider.notifier)
-          .getOrFetch(header.id, authNotifier.bridge),
+    // Otherwise, fetch message + attachments.
+    return FutureBuilder<_MessageDetailPayload>(
+      future: _loadPayload(ref, authNotifier),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
@@ -56,13 +172,23 @@ class SmartschoolMessageDetailView extends ConsumerWidget {
           return const Center(child: Text('No message data'));
         }
 
-        return _buildMessage(context, snapshot.data!);
+        return _buildMessage(
+          context,
+          ref,
+          snapshot.data!.detail,
+          snapshot.data!.attachments,
+        );
       },
     );
   }
 
   /// Build the message display.
-  Widget _buildMessage(BuildContext context, SmartschoolMessageDetail msg) {
+  Widget _buildMessage(
+    BuildContext context,
+    WidgetRef ref,
+    SmartschoolMessageDetail msg,
+    List<SmartschoolAttachment> attachments,
+  ) {
     final textTheme = Theme.of(context).textTheme;
     // Prefer the header's fromImage (reliably populated); fall back to
     // senderPicture from the full message if available.
@@ -102,8 +228,207 @@ class SmartschoolMessageDetailView extends ConsumerWidget {
         ),
         const Divider(height: 1),
         Expanded(child: _HtmlBodyView(html: msg.body)),
+        if (attachments.isNotEmpty) ...[
+          const Divider(height: 1),
+          _buildAttachmentsRow(context, ref, attachments),
+        ],
       ],
     );
+  }
+
+  Widget _buildAttachmentsRow(
+    BuildContext context,
+    WidgetRef ref,
+    List<SmartschoolAttachment> attachments,
+  ) {
+    final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
+    final colorScheme = theme.colorScheme;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      color: colorScheme.surface,
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: attachments.map((attachment) {
+              final visual = _attachmentVisual(attachment, colorScheme);
+              return Padding(
+                padding: const EdgeInsets.only(left: 8),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: () => _handleAttachmentTap(context, ref, attachment),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 9,
+                    ),
+                    decoration: BoxDecoration(
+                      color: colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: visual.tint.withValues(alpha: 0.35),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: visual.tint.withValues(alpha: 0.14),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Icon(
+                            visual.icon,
+                            size: 18,
+                            color: visual.tint,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 220),
+                              child: Text(
+                                attachment.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: textTheme.bodySmall?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            Text(
+                              _formatAttachmentSize(attachment),
+                              style: textTheme.labelSmall?.copyWith(
+                                color: colorScheme.outline,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+      ),
+    );
+  }
+
+  _AttachmentVisual _attachmentVisual(
+    SmartschoolAttachment attachment,
+    ColorScheme colorScheme,
+  ) {
+    final fileName = attachment.name.toLowerCase();
+    final dotIndex = fileName.lastIndexOf('.');
+    final extension = dotIndex >= 0 ? fileName.substring(dotIndex + 1) : '';
+
+    switch (extension) {
+      case 'pdf':
+        return _AttachmentVisual(
+          Icons.picture_as_pdf_rounded,
+          Colors.red.shade600,
+        );
+      case 'doc':
+      case 'docx':
+      case 'odt':
+      case 'rtf':
+        return _AttachmentVisual(
+          Icons.description_rounded,
+          Colors.blue.shade700,
+        );
+      case 'xls':
+      case 'xlsx':
+      case 'csv':
+      case 'ods':
+        return _AttachmentVisual(
+          Icons.table_chart_rounded,
+          Colors.green.shade700,
+        );
+      case 'ppt':
+      case 'pptx':
+      case 'odp':
+        return _AttachmentVisual(
+          Icons.slideshow_rounded,
+          Colors.orange.shade700,
+        );
+      case 'jpg':
+      case 'jpeg':
+      case 'png':
+      case 'gif':
+      case 'bmp':
+      case 'webp':
+      case 'svg':
+        return _AttachmentVisual(Icons.image_rounded, Colors.purple.shade500);
+      case 'zip':
+      case 'rar':
+      case '7z':
+      case 'tar':
+      case 'gz':
+        return _AttachmentVisual(Icons.archive_rounded, Colors.brown.shade600);
+      case 'mp3':
+      case 'wav':
+      case 'ogg':
+      case 'flac':
+        return _AttachmentVisual(
+          Icons.audio_file_rounded,
+          Colors.teal.shade600,
+        );
+      case 'mp4':
+      case 'mov':
+      case 'avi':
+      case 'mkv':
+      case 'webm':
+        return _AttachmentVisual(
+          Icons.movie_rounded,
+          Colors.deepPurple.shade400,
+        );
+      case 'txt':
+      case 'md':
+      case 'log':
+        return _AttachmentVisual(Icons.notes_rounded, Colors.blueGrey.shade600);
+      case 'dart':
+      case 'py':
+      case 'js':
+      case 'ts':
+      case 'json':
+      case 'xml':
+      case 'yaml':
+      case 'yml':
+      case 'html':
+      case 'css':
+        return _AttachmentVisual(Icons.code_rounded, colorScheme.primary);
+      default:
+        return _AttachmentVisual(
+          Icons.insert_drive_file_rounded,
+          colorScheme.primary,
+        );
+    }
+  }
+
+  String _formatAttachmentSize(SmartschoolAttachment attachment) {
+    final sizeLabel = attachment.sizeLabel;
+    if (sizeLabel != null && sizeLabel.trim().isNotEmpty) {
+      return sizeLabel;
+    }
+
+    final bytes = attachment.size;
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) {
+      return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    }
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
 
   /// Sender name/date on the left (intrinsic width), recipients on the right.
@@ -416,4 +741,21 @@ class _InitialsCircle extends StatelessWidget {
       ),
     );
   }
+}
+
+class _AttachmentVisual {
+  const _AttachmentVisual(this.icon, this.tint);
+
+  final IconData icon;
+  final Color tint;
+}
+
+class _MessageDetailPayload {
+  const _MessageDetailPayload({
+    required this.detail,
+    required this.attachments,
+  });
+
+  final SmartschoolMessageDetail detail;
+  final List<SmartschoolAttachment> attachments;
 }
