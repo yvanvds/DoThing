@@ -17,6 +17,7 @@ dependencies:
   flutter_chat_core: ^2.9.0
   py_engine_desktop: ^1.1.0
   webview_all: ^1.0.3
+  url_launcher: ^6.3.0
 
 
 dev_dependencies:

@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_all/webview_all.dart';
 
 import '../../../models/smartschool_message.dart';
@@ -275,6 +278,16 @@ class _HtmlBodyViewState extends State<_HtmlBodyView> {
     table { border-collapse: collapse; }
     td, th { padding: 4px 8px; vertical-align: top; }
   </style>
+  <script>
+    document.addEventListener('click', function(e) {
+      var el = e.target;
+      while (el && el.tagName !== 'A') { el = el.parentElement; }
+      if (el && el.href && (el.href.startsWith('http://') || el.href.startsWith('https://'))) {
+        e.preventDefault();
+        LinkHandler.postMessage(el.href);
+      }
+    });
+  </script>
 </head>
 <body>$body</body>
 </html>''';
@@ -284,26 +297,55 @@ class _HtmlBodyViewState extends State<_HtmlBodyView> {
     super.initState();
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onNavigationRequest: (request) {
-            // Open links externally rather than navigating away
-            if (request.url != 'about:blank') {
-              return NavigationDecision.prevent;
-            }
-            return NavigationDecision.navigate;
-          },
-        ),
+      ..addJavaScriptChannel(
+        'LinkHandler',
+        onMessageReceived: (msg) {
+          final uri = Uri.tryParse(msg.message);
+          if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
+            unawaited(launchUrl(uri, mode: LaunchMode.externalApplication));
+          }
+        },
       )
-      ..loadHtmlString(_wrapHtml(widget.html));
+      ..loadHtmlString(_wrapHtml(_fixRelativeImageUrls(widget.html)));
   }
 
   @override
   void didUpdateWidget(_HtmlBodyView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.html != widget.html) {
-      _controller.loadHtmlString(_wrapHtml(widget.html));
+      _controller.loadHtmlString(_wrapHtml(_fixRelativeImageUrls(widget.html)));
     }
+  }
+
+  /// Rewrites Smartschool relative image paths to absolute stream URLs.
+  ///
+  /// Input:  src="/public/{platform}/Images/{filename}/unique_id/{uid}"
+  /// Output: src="https://{platform}.smartschool.be/TinyMCE/Image/stream
+  ///              ?platform={platform}&filename={filename}&unique_id={uid}"
+  static String _fixRelativeImageUrls(String html) {
+    return html.replaceAllMapped(
+      RegExp(r'src="(/public/([^/"&]+)/Images/([^/"]+)/unique_id/([^"]+))"'),
+      (m) {
+        final platform = _htmlDecode(m[2]!);
+        final filename = _htmlDecode(m[3]!);
+        final uniqueId = _htmlDecode(m[4]!);
+        final newUrl =
+            'https://$platform.smartschool.be/TinyMCE/Image/stream'
+            '?platform=$platform&filename=$filename&unique_id=$uniqueId';
+        return 'src="$newUrl"';
+      },
+    );
+  }
+
+  /// Decodes common HTML character entities in a URL attribute value.
+  static String _htmlDecode(String input) {
+    return input
+        .replaceAll('&#43;', '+')
+        .replaceAll('&amp;', '&')
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&quot;', '"')
+        .replaceAll('&#39;', "'");
   }
 
   @override
