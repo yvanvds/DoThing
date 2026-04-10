@@ -10,11 +10,11 @@ pre-commit:
   commands:
     analyze:
       stage_fixed: false
-      run: cd do_thing && flutter analyze
+      run: flutter analyze
       pass_filename: false
     test:
       stage_fixed: false
-      run: cd do_thing && flutter test
+      run: flutter test
       pass_filename: false
 
 # Pre-push hooks - optionally run before push

@@ -6,20 +6,17 @@
     "configurations": [
         {
             "name": "do_thing",
-            "cwd": "do_thing",
             "request": "launch",
             "type": "dart"
         },
         {
             "name": "do_thing (profile mode)",
-            "cwd": "do_thing",
             "request": "launch",
             "type": "dart",
             "flutterMode": "profile"
         },
         {
             "name": "do_thing (release mode)",
-            "cwd": "do_thing",
             "request": "launch",
             "type": "dart",
             "flutterMode": "release"

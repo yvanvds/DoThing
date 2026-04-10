@@ -30,20 +30,15 @@ jobs:
           & "$flutterBin\flutter.bat" --version
 
       - name: Install dependencies
-        working-directory: do_thing
         run: flutter pub get
 
       - name: Analyze
-        working-directory: do_thing
         run: flutter analyze
 
       - name: Test with coverage
-        working-directory: do_thing
         run: flutter test --coverage
 
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v6
-        with:
-          args: -Dproject.settings=do_thing/sonar-project.properties
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
