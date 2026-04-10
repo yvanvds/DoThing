@@ -9,19 +9,26 @@ jobs:
   sonarqube:
     name: SonarQube
     runs-on: windows-latest
+    env:
+      FLUTTER_VERSION: 3.38.3
     defaults:
       run:
         working-directory: do_thing
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
           
       # The analysis requires to retrieve dependencies and build successfully
       - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: 'stable'
+        shell: pwsh
+        run: |
+          $zip = "$env:RUNNER_TEMP/flutter_windows_${env:FLUTTER_VERSION}-stable.zip"
+          $url = "https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_${env:FLUTTER_VERSION}-stable.zip"
+          Invoke-WebRequest -Uri $url -OutFile $zip
+          Expand-Archive -Path $zip -DestinationPath $env:RUNNER_TEMP -Force
+          "$env:RUNNER_TEMP/flutter/bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          flutter --version
 
       - name: Install dependencies
         run: flutter pub get
@@ -33,6 +40,6 @@ jobs:
         run: flutter test --coverage
 
       - name: SonarQube Scan
-        uses: SonarSource/sonarqube-scan-action@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602
+        uses: SonarSource/sonarqube-scan-action@v6
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
