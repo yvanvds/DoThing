@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'dart:async';
 
 import '../../../controllers/smartschool_inbox_controller.dart';
+import '../../../services/office365_mail_service.dart';
 import '../../../services/smartschool_messages_service.dart';
 
 class SmartschoolMessageHeaderTile extends ConsumerStatefulWidget {
@@ -9,12 +11,14 @@ class SmartschoolMessageHeaderTile extends ConsumerStatefulWidget {
     required this.header,
     required this.onRemoveFromList,
     required this.onHeaderUpdated,
+    this.highlightAsNew = false,
     super.key,
   });
 
   final SmartschoolMessageHeader header;
   final ValueChanged<int> onRemoveFromList;
   final ValueChanged<SmartschoolMessageHeader> onHeaderUpdated;
+  final bool highlightAsNew;
 
   @override
   ConsumerState<SmartschoolMessageHeaderTile> createState() =>
@@ -24,8 +28,51 @@ class SmartschoolMessageHeaderTile extends ConsumerStatefulWidget {
 class _SmartschoolMessageHeaderTileState
     extends ConsumerState<SmartschoolMessageHeaderTile> {
   bool _isHovered = false;
+  bool _animateEntry = false;
+  bool _highlightPulse = false;
+  Timer? _highlightTimer;
 
   bool get _isSmartschoolSource => widget.header.source == 'smartschool';
+  bool get _isOutlookSource => widget.header.source == 'outlook';
+
+  @override
+  void initState() {
+    super.initState();
+    _triggerNewMessageAnimationIfNeeded();
+  }
+
+  @override
+  void didUpdateWidget(covariant SmartschoolMessageHeaderTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!oldWidget.highlightAsNew && widget.highlightAsNew) {
+      _triggerNewMessageAnimationIfNeeded();
+    }
+  }
+
+  void _triggerNewMessageAnimationIfNeeded() {
+    if (!widget.highlightAsNew) return;
+
+    _animateEntry = true;
+    _highlightPulse = true;
+
+    _highlightTimer?.cancel();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() => _animateEntry = false);
+    });
+
+    _highlightTimer = Timer(const Duration(seconds: 2), () {
+      if (!mounted) return;
+      setState(() => _highlightPulse = false);
+    });
+  }
+
+  @override
+  void dispose() {
+    _highlightTimer?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -39,122 +86,134 @@ class _SmartschoolMessageHeaderTileState
         selectedHeader?.id == header.id &&
         selectedHeader?.source == header.source;
 
-    return MouseRegion(
-      onEnter: (_) => setState(() => _isHovered = true),
-      onExit: (_) => setState(() => _isHovered = false),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: _handleOpenMessage,
-          child: Container(
-            decoration: BoxDecoration(
-              color: isSelected
-                  ? colorScheme.surfaceContainerHighest
-                  : Colors.transparent,
-              border: Border(
-                bottom: BorderSide(color: colorScheme.outlineVariant),
+    final baseColor = isSelected
+        ? colorScheme.surfaceContainerHighest
+        : Colors.transparent;
+    final animatedColor = _highlightPulse
+        ? colorScheme.primaryContainer.withValues(alpha: 0.35)
+        : baseColor;
+
+    return AnimatedSlide(
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOutCubic,
+      offset: _animateEntry ? const Offset(0.08, 0) : Offset.zero,
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _isHovered = true),
+        onExit: (_) => setState(() => _isHovered = false),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: _handleOpenMessage,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 900),
+              curve: Curves.easeOutCubic,
+              decoration: BoxDecoration(
+                color: animatedColor,
+                border: Border(
+                  bottom: BorderSide(color: colorScheme.outlineVariant),
+                ),
               ),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            child: Stack(
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    _SenderAvatar(header: header),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  header.subject,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: header.unread
-                                        ? FontWeight.w700
-                                        : FontWeight.w500,
-                                    color: subjectColor,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              child: Stack(
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      _SenderAvatar(header: header),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    header.subject,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: header.unread
+                                          ? FontWeight.w700
+                                          : FontWeight.w500,
+                                      color: subjectColor,
+                                    ),
                                   ),
                                 ),
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                _formatDate(header.date),
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: colorScheme.onSurfaceVariant,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 4),
-                          Row(
-                            children: [
-                              _SourceBadge(source: header.source),
-                              const SizedBox(width: 6),
-                              Expanded(
-                                child: Text(
-                                  header.from,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
+                                const SizedBox(width: 8),
+                                Text(
+                                  _formatDate(header.date),
                                   style: TextStyle(
-                                    fontSize: 12,
+                                    fontSize: 11,
                                     color: colorScheme.onSurfaceVariant,
                                   ),
                                 ),
-                              ),
-                              if (header.hasReply)
-                                Icon(
-                                  Icons.reply,
-                                  size: 14,
-                                  color: colorScheme.onSurfaceVariant,
-                                ),
-                              if (header.hasForward) ...[
-                                const SizedBox(width: 6),
-                                Icon(
-                                  Icons.forward,
-                                  size: 14,
-                                  color: colorScheme.onSurfaceVariant,
-                                ),
                               ],
-                              if (header.hasAttachment) ...[
+                            ),
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                _SourceBadge(source: header.source),
                                 const SizedBox(width: 6),
-                                Icon(
-                                  Icons.attach_file,
-                                  size: 14,
-                                  color: colorScheme.onSurfaceVariant,
+                                Expanded(
+                                  child: Text(
+                                    header.from,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
                                 ),
+                                if (header.hasReply)
+                                  Icon(
+                                    Icons.reply,
+                                    size: 14,
+                                    color: colorScheme.onSurfaceVariant,
+                                  ),
+                                if (header.hasForward) ...[
+                                  const SizedBox(width: 6),
+                                  Icon(
+                                    Icons.forward,
+                                    size: 14,
+                                    color: colorScheme.onSurfaceVariant,
+                                  ),
+                                ],
+                                if (header.hasAttachment) ...[
+                                  const SizedBox(width: 6),
+                                  Icon(
+                                    Icons.attach_file,
+                                    size: 14,
+                                    color: colorScheme.onSurfaceVariant,
+                                  ),
+                                ],
                               ],
-                            ],
-                          ),
-                        ],
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-                if (_isHovered)
-                  Positioned(
-                    right: 0,
-                    top: 0,
-                    bottom: 0,
-                    child: Center(
-                      child: _ActionButtons(
-                        header: header,
-                        enabled: _isSmartschoolSource,
-                        onArchive: _handleArchive,
-                        onTrash: _handleTrash,
-                        onMarkUnread: _handleMarkUnread,
-                      ),
-                    ),
+                    ],
                   ),
-              ],
+                  if (_isHovered)
+                    Positioned(
+                      right: 0,
+                      top: 0,
+                      bottom: 0,
+                      child: Center(
+                        child: _ActionButtons(
+                          header: header,
+                          enabled: _isSmartschoolSource || _isOutlookSource,
+                          onArchive: _handleArchive,
+                          onTrash: _handleTrash,
+                          onMarkUnread: _handleMarkUnread,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
         ),
@@ -171,12 +230,19 @@ class _SmartschoolMessageHeaderTileState
   }
 
   Future<void> _handleArchive() async {
-    if (!_isSmartschoolSource) return;
-
     try {
-      await ref
-          .read(smartschoolMessagesProvider.notifier)
-          .archive(widget.header.id);
+      if (_isSmartschoolSource) {
+        await ref
+            .read(smartschoolMessagesProvider.notifier)
+            .archive(widget.header.id);
+      } else if (_isOutlookSource) {
+        await ref
+            .read(office365MailServiceProvider)
+            .archiveMessage(widget.header.id);
+      } else {
+        return;
+      }
+
       widget.onRemoveFromList(widget.header.id);
       if (mounted) setState(() => _isHovered = false);
     } catch (e) {
@@ -189,12 +255,19 @@ class _SmartschoolMessageHeaderTileState
   }
 
   Future<void> _handleTrash() async {
-    if (!_isSmartschoolSource) return;
-
     try {
-      await ref
-          .read(smartschoolMessagesProvider.notifier)
-          .trash(widget.header.id);
+      if (_isSmartschoolSource) {
+        await ref
+            .read(smartschoolMessagesProvider.notifier)
+            .trash(widget.header.id);
+      } else if (_isOutlookSource) {
+        await ref
+            .read(office365MailServiceProvider)
+            .deleteMessage(widget.header.id);
+      } else {
+        return;
+      }
+
       widget.onRemoveFromList(widget.header.id);
       if (mounted) setState(() => _isHovered = false);
     } catch (e) {
@@ -251,19 +324,25 @@ class _SmartschoolMessageHeaderTileState
   }
 
   Future<void> _handleMarkUnread() async {
-    if (!_isSmartschoolSource) return;
-
     try {
       final updatedHeader = _copyHeaderWithUnread(widget.header, unread: true);
 
       widget.onHeaderUpdated(updatedHeader);
 
-      await ref
-          .read(smartschoolMessagesProvider.notifier)
-          .markUnread(widget.header.id);
-      await ref
-          .read(smartschoolInboxProvider.notifier)
-          .refreshInboxAndGetHeaders(showLoading: false);
+      if (_isSmartschoolSource) {
+        await ref
+            .read(smartschoolMessagesProvider.notifier)
+            .markUnread(widget.header.id);
+        await ref
+            .read(smartschoolInboxProvider.notifier)
+            .refreshInboxAndGetHeaders(showLoading: false);
+      } else if (_isOutlookSource) {
+        await ref
+            .read(office365MailServiceProvider)
+            .markMessageUnread(widget.header.id);
+      } else {
+        return;
+      }
 
       if (mounted) setState(() => _isHovered = false);
     } catch (e) {

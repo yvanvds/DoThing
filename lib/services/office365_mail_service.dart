@@ -71,6 +71,54 @@ class Office365MailService {
 
   final Ref ref;
 
+  Future<void> markMessageRead(int localMessageId) =>
+      _setMessageReadState(localMessageId: localMessageId, isRead: true);
+
+  Future<void> markMessageUnread(int localMessageId) =>
+      _setMessageReadState(localMessageId: localMessageId, isRead: false);
+
+  Future<void> archiveMessage(int localMessageId) async {
+    final local = await _requireOutlookLocalMessage(localMessageId);
+    final token = await _ensureValidAccessToken();
+    final encodedId = Uri.encodeComponent(local.externalId);
+
+    await _postJson(
+      Uri.parse('https://graph.microsoft.com/v1.0/me/messages/$encodedId/move'),
+      headers: {'Authorization': 'Bearer $token'},
+      body: {'destinationId': 'archive'},
+    );
+
+    final db = ref.read(appDatabaseProvider);
+    await db.messagesDao.updateMessageById(
+      local.id,
+      MessagesCompanion(
+        isArchived: const Value(true),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
+  }
+
+  Future<void> deleteMessage(int localMessageId) async {
+    final local = await _requireOutlookLocalMessage(localMessageId);
+    final token = await _ensureValidAccessToken();
+    final encodedId = Uri.encodeComponent(local.externalId);
+
+    await _sendWithoutResponseBody(
+      method: 'DELETE',
+      uri: Uri.parse('https://graph.microsoft.com/v1.0/me/messages/$encodedId'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+
+    final db = ref.read(appDatabaseProvider);
+    await db.messagesDao.updateMessageById(
+      local.id,
+      MessagesCompanion(
+        isDeleted: const Value(true),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
+  }
+
   Future<void> authenticate() async {
     final settings = await ref.read(office365SettingsProvider.future);
     _validateSettings(settings);
@@ -478,6 +526,43 @@ class Office365MailService {
       await db.attachmentsDao.markDownloadFailed(attachment.id);
       rethrow;
     }
+  }
+
+  Future<void> _setMessageReadState({
+    required int localMessageId,
+    required bool isRead,
+  }) async {
+    final local = await _requireOutlookLocalMessage(localMessageId);
+    final token = await _ensureValidAccessToken();
+    final encodedId = Uri.encodeComponent(local.externalId);
+
+    await _sendWithoutResponseBody(
+      method: 'PATCH',
+      uri: Uri.parse('https://graph.microsoft.com/v1.0/me/messages/$encodedId'),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+      body: {'isRead': isRead},
+    );
+
+    final db = ref.read(appDatabaseProvider);
+    await db.messagesDao.updateMessageById(
+      local.id,
+      MessagesCompanion(
+        isRead: Value(isRead),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
+  }
+
+  Future<Message> _requireOutlookLocalMessage(int localMessageId) async {
+    final db = ref.read(appDatabaseProvider);
+    final local = await db.messagesDao.getMessageById(localMessageId);
+    if (local == null || local.source != _kOffice365Source) {
+      throw StateError('Outlook message not found in local database.');
+    }
+    return local;
   }
 
   Future<void> _persistInboxMessage(OutlookLatestMessage latest) async {
@@ -944,6 +1029,64 @@ class Office365MailService {
         throw StateError('Response from $uri was not a JSON object.');
       }
       return decoded;
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  Future<Map<String, dynamic>> _postJson(
+    Uri uri, {
+    Map<String, String> headers = const {},
+    Map<String, dynamic> body = const {},
+  }) async {
+    final client = HttpClient();
+    try {
+      final request = await client.postUrl(uri);
+      headers.forEach(request.headers.set);
+      request.headers.contentType = ContentType.json;
+      request.write(jsonEncode(body));
+
+      final response = await request.close();
+      final raw = await response.transform(utf8.decoder).join();
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw StateError('HTTP ${response.statusCode} calling $uri: $raw');
+      }
+
+      if (raw.trim().isEmpty) {
+        return const {};
+      }
+
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map<String, dynamic>) {
+        throw StateError('Response from $uri was not a JSON object.');
+      }
+      return decoded;
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  Future<void> _sendWithoutResponseBody({
+    required String method,
+    required Uri uri,
+    Map<String, String> headers = const {},
+    Map<String, dynamic>? body,
+  }) async {
+    final client = HttpClient();
+    try {
+      final request = await client.openUrl(method, uri);
+      headers.forEach(request.headers.set);
+      if (body != null) {
+        request.headers.contentType = ContentType.json;
+        request.write(jsonEncode(body));
+      }
+
+      final response = await request.close();
+      final raw = await response.transform(utf8.decoder).join();
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw StateError('HTTP ${response.statusCode} calling $uri: $raw');
+      }
     } finally {
       client.close(force: true);
     }
