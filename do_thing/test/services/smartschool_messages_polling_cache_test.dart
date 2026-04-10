@@ -4,8 +4,6 @@ import 'package:drift/native.dart';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:do_thing/database/app_database.dart';
-import 'package:do_thing/database/repositories/smartschool_sync_repository.dart';
 import 'package:do_thing/models/smartschool_message.dart';
 import 'package:do_thing/providers/database_provider.dart';
 import 'package:do_thing/services/smartschool_bridge.dart';
