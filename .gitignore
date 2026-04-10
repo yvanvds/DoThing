@@ -120,3 +120,6 @@ app.*.symbols
 python_test/credentials.yml
 python_test/thest_auth.py
 python_test/
+# Node.js / NPM / Lefthook
+node_modules/
+package-lock.json

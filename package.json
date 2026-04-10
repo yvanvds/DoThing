@@ -1,0 +1,9 @@
+{
+  "name": "do-thing",
+  "version": "0.1.0",
+  "description": "A Flutter project with lefthook for Git hooks",
+  "devDependencies": {
+    "lefthook": "latest"
+  }
+}
+

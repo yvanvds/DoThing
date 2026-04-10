@@ -1,0 +1,27 @@
+# Lefthook configuration for Git hooks
+# Project: DoThing
+# See: https://evilmartians.com/chronicles/lefthook-knock-down-your-git-workflow
+
+version: 1
+
+# Pre-commit hooks - run before commit
+pre-commit:
+  parallel: false
+  commands:
+    analyze:
+      stage_fixed: false
+      run: cd do_thing && flutter analyze
+      pass_filename: false
+    test:
+      stage_fixed: false
+      run: cd do_thing && flutter test
+      pass_filename: false
+
+# Pre-push hooks - optionally run before push
+# Uncomment to enable
+# pre-push:
+#   commands:
+#     test:
+#       run: cd do_thing && flutter test
+#       pass_filename: false
+

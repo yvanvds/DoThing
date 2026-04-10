@@ -122,7 +122,7 @@ class _TerminalLine extends StatelessWidget {
           SizedBox(
             width: 20,
             child: SelectableText(
-              '$prefix',
+              prefix,
               style: TextStyle(
                 fontFamily: 'monospace',
                 fontSize: 12,
@@ -133,7 +133,7 @@ class _TerminalLine extends StatelessWidget {
           SizedBox(
             width: 68,
             child: SelectableText(
-              '${_formatTime(entry.timestamp)} ',
+              _formatTime(entry.timestamp),
               style: TextStyle(
                 fontFamily: 'monospace',
                 fontSize: 12,
