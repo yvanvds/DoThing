@@ -433,8 +433,9 @@ class _InitialsAvatar extends StatelessWidget {
         .toList();
 
     if (parts.isEmpty) return '?';
-    if (parts.length == 1)
+    if (parts.length == 1) {
       return parts.first.characters.take(2).toString().toUpperCase();
+    }
 
     return (parts.first.characters.first + parts.last.characters.first)
         .toUpperCase();

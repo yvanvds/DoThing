@@ -705,7 +705,7 @@ class _DetailAvatar extends StatelessWidget {
           width: 80,
           height: 80,
           fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => _InitialsCircle(name: name),
+          errorBuilder: (_, _, _) => _InitialsCircle(name: name),
         ),
       );
     }

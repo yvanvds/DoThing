@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -7,15 +9,46 @@ import 'providers/database_provider.dart';
 import 'widgets/app_shell.dart';
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  final db = AppDatabase.openInAppSupport();
+  runZonedGuarded(
+    () async {
+      WidgetsFlutterBinding.ensureInitialized();
+      final db = AppDatabase.openInAppSupport();
 
-  runApp(
-    ProviderScope(
-      overrides: [appDatabaseProvider.overrideWithValue(db)],
-      child: const MainApp(),
+      runApp(
+        ProviderScope(
+          overrides: [appDatabaseProvider.overrideWithValue(db)],
+          child: const MainApp(),
+        ),
+      );
+    },
+    (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(exception: error, stack: stackTrace),
+      );
+    },
+    zoneSpecification: ZoneSpecification(
+      print: (self, parent, zone, line) {
+        if (_shouldSuppressLogLine(line)) {
+          return;
+        }
+        parent.print(zone, line);
+      },
     ),
   );
+}
+
+bool _shouldSuppressLogLine(String line) {
+  if (!line.startsWith('🔧 ')) {
+    return false;
+  }
+
+  return line.startsWith('🔧 Python executable path:') ||
+      line.startsWith('🔧 Python executable exists:') ||
+      line.startsWith('🔧 Python executable size:') ||
+      line.startsWith('🔧 Python executable mode:') ||
+      line.startsWith('🔧 Setting up Python process streams...') ||
+      line.startsWith('🔧 Stream listeners set up complete') ||
+      line.startsWith('🔧 Raw stdout line:');
 }
 
 class MainApp extends ConsumerWidget {
