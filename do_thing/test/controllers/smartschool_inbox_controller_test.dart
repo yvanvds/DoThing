@@ -35,7 +35,8 @@ class _FakeAuthController extends SmartschoolAuthController {
 class _FakeMessagesController extends SmartschoolMessagesController {
   _FakeMessagesController({required this.onGetHeaders});
 
-  final Future<List<SmartschoolMessageHeader>> Function() onGetHeaders;
+  final Future<List<SmartschoolMessageHeader>> Function(SmartschoolBoxType)
+  onGetHeaders;
 
   @override
   void build() {}
@@ -45,7 +46,7 @@ class _FakeMessagesController extends SmartschoolMessagesController {
     SmartschoolBoxType boxType = SmartschoolBoxType.inbox,
     List<int> alreadySeenIds = const [],
   }) {
-    return onGetHeaders();
+    return onGetHeaders(boxType);
   }
 
   @override
@@ -57,13 +58,18 @@ class _FakeMessagesController extends SmartschoolMessagesController {
   }
 }
 
-SmartschoolMessageHeader _header({required int id, required bool unread}) {
+SmartschoolMessageHeader _header({
+  required int id,
+  required bool unread,
+  String from = 'Sender',
+  String date = '2026-04-10T12:00:00Z',
+}) {
   return SmartschoolMessageHeader(
     id: id,
-    from: 'Sender',
+    from: from,
     fromImage: '',
     subject: 'Subject $id',
-    date: '2026-04-10T12:00:00Z',
+    date: date,
     status: unread ? 0 : 1,
     unread: unread,
     hasAttachment: false,
@@ -92,7 +98,8 @@ void main() {
               () => _FakeAuthController(connectedAfterConnect: false),
             ),
             smartschoolMessagesProvider.overrideWith(
-              () => _FakeMessagesController(onGetHeaders: () async => const []),
+              () =>
+                  _FakeMessagesController(onGetHeaders: (_) async => const []),
             ),
           ],
         );
@@ -139,7 +146,10 @@ void main() {
               () => _FakeAuthController(connectedAfterConnect: true),
             ),
             smartschoolMessagesProvider.overrideWith(
-              () => _FakeMessagesController(onGetHeaders: () async => headers),
+              () => _FakeMessagesController(
+                onGetHeaders: (box) async =>
+                    box == SmartschoolBoxType.inbox ? headers : const [],
+              ),
             ),
           ],
         );
@@ -159,6 +169,62 @@ void main() {
     );
 
     test(
+      'refreshInboxAndGetContactInboxes orders contacts and related items by newest first',
+      () async {
+        final db = AppDatabase(NativeDatabase.memory());
+        addTearDown(db.close);
+
+        final headers = [
+          _header(
+            id: 1,
+            unread: true,
+            from: 'Alice',
+            date: '2026-04-10T10:00:00Z',
+          ),
+          _header(
+            id: 2,
+            unread: false,
+            from: 'Bob',
+            date: '2026-04-10T11:00:00Z',
+          ),
+          _header(
+            id: 3,
+            unread: false,
+            from: 'Alice',
+            date: '2026-04-10T12:00:00Z',
+          ),
+        ];
+
+        final container = ProviderContainer(
+          overrides: [
+            appDatabaseProvider.overrideWithValue(db),
+            smartschoolAuthProvider.overrideWith(
+              () => _FakeAuthController(connectedAfterConnect: true),
+            ),
+            smartschoolMessagesProvider.overrideWith(
+              () => _FakeMessagesController(
+                onGetHeaders: (box) async =>
+                    box == SmartschoolBoxType.inbox ? headers : const [],
+              ),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        final notifier = container.read(smartschoolInboxProvider.notifier);
+        final contacts = await notifier.refreshInboxAndGetContactInboxes();
+
+        expect(contacts.map((c) => c.displayName), ['Alice', 'Bob']);
+        expect(contacts.first.items.map((item) => item.messageHeader.id), [
+          3,
+          1,
+        ]);
+        expect(contacts.first.unreadCount, 1);
+        expect(contacts.last.items.map((item) => item.messageHeader.id), [2]);
+      },
+    );
+
+    test(
       'refreshInboxAndGetHeaders maps parse error to friendly status message',
       () async {
         final db = AppDatabase(NativeDatabase.memory());
@@ -172,8 +238,12 @@ void main() {
             ),
             smartschoolMessagesProvider.overrideWith(
               () => _FakeMessagesController(
-                onGetHeaders: () async =>
-                    throw Exception('ParseError: no element found'),
+                onGetHeaders: (box) async {
+                  if (box == SmartschoolBoxType.inbox) {
+                    throw Exception('ParseError: no element found');
+                  }
+                  return const [];
+                },
               ),
             ),
           ],

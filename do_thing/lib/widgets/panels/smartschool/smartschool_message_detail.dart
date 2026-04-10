@@ -8,9 +8,11 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_all/webview_all.dart';
 
 import '../../../models/smartschool_message.dart';
+import '../../../controllers/status_controller.dart';
 import '../../../providers/database_provider.dart';
 import '../../../services/smartschool_messages_service.dart';
 import '../../../services/smartschool_auth_service.dart';
+import '../../../services/smartschool_bridge.dart';
 
 /// Displays the full detail of a selected Smartschool message.
 ///
@@ -26,17 +28,192 @@ class SmartschoolMessageDetailView extends ConsumerWidget {
     SmartschoolAuthController authNotifier,
   ) async {
     final syncRepo = ref.read(smartschoolSyncRepositoryProvider);
-    final detail = await ref
-        .read(smartschoolMessageCacheProvider.notifier)
-        .getOrFetch(header.id, authNotifier.bridge, syncRepository: syncRepo);
-    final attachments = await ref
-        .read(smartschoolMessagesProvider.notifier)
-        .listAttachments(header.id);
-    // Persist attachment metadata to the local database.
     try {
-      await syncRepo.syncAttachments(header.id, attachments);
+      final detail = await ref
+          .read(smartschoolMessageCacheProvider.notifier)
+          .getOrFetch(header.id, authNotifier.bridge, syncRepository: syncRepo);
+      final attachments = await ref
+          .read(smartschoolMessagesProvider.notifier)
+          .listAttachments(header.id);
+      // Persist attachment metadata to the local database.
+      try {
+        await syncRepo.syncAttachments(header.id, attachments);
+      } catch (_) {}
+      return _MessageDetailPayload(detail: detail, attachments: attachments);
+    } catch (error, stackTrace) {
+      final fallback = await _tryBuildFallbackPayload(ref, error);
+      if (fallback != null) {
+        ref
+            .read(statusProvider.notifier)
+            .add(
+              StatusEntryType.warning,
+              'Loaded fallback detail from local cache for message ${header.id}.',
+            );
+        await _dumpDetailLoadDiagnostics(
+          ref,
+          authNotifier,
+          error: error,
+          stackTrace: stackTrace,
+        );
+        return fallback;
+      }
+
+      await _dumpDetailLoadDiagnostics(
+        ref,
+        authNotifier,
+        error: error,
+        stackTrace: stackTrace,
+      );
+      rethrow;
+    }
+  }
+
+  Future<_MessageDetailPayload?> _tryBuildFallbackPayload(
+    WidgetRef ref,
+    Object error,
+  ) async {
+    if (!_isBridgeDetailPayloadError(error)) return null;
+
+    final db = ref.read(appDatabaseProvider);
+    final local = await db.messagesDao.findMessage(
+      source: 'smartschool',
+      externalId: header.id.toString(),
+    );
+    if (local == null) return null;
+
+    Map<String, dynamic>? rawDetail;
+    if (local.rawDetailJson != null && local.rawDetailJson!.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(local.rawDetailJson!);
+        if (decoded is Map<String, dynamic>) {
+          rawDetail = decoded;
+        }
+      } catch (_) {}
+    }
+
+    final fallbackDetail = SmartschoolMessageDetail(
+      id: header.id,
+      from: (rawDetail?['from'] as String?) ?? header.from,
+      subject: (rawDetail?['subject'] as String?) ?? header.subject,
+      body:
+          local.bodyRaw ??
+          local.bodyText ??
+          '<p><em>Message body could not be loaded because the source payload is invalid.</em></p>',
+      date: (rawDetail?['date'] as String?) ?? header.date,
+      to: rawDetail?['to'] as String?,
+      status: (rawDetail?['status'] as int?) ?? (local.isRead ? 1 : 0),
+      attachment:
+          (rawDetail?['attachment'] as int?) ?? (local.hasAttachments ? 1 : 0),
+      unread: (rawDetail?['unread'] as bool?) ?? !local.isRead,
+      label: rawDetail?['label'] as bool?,
+      receivers: rawDetail?['receivers'],
+      ccReceivers: rawDetail?['ccreceivers'],
+      bccReceivers: rawDetail?['bccreceivers'],
+      senderPicture:
+          (rawDetail?['sender_picture'] as String?) ??
+          (header.fromImage.isNotEmpty ? header.fromImage : null),
+      fromTeam: rawDetail?['from_team'] as int?,
+      totalNrOtherToReceivers:
+          rawDetail?['total_nr_other_to_reciviers'] as int?,
+      totalNrOtherCcReceivers:
+          rawDetail?['total_nr_other_cc_receivers'] as int?,
+      totalNrOtherBccReceivers:
+          rawDetail?['total_nr_other_bcc_receivers'] as int?,
+      canReply: rawDetail?['can_reply'] as bool?,
+      hasReply: rawDetail?['has_reply'] as bool?,
+      hasForward: rawDetail?['has_forward'] as bool?,
+      sendDate: rawDetail?['send_date'] as String?,
+    );
+
+    List<SmartschoolAttachment> attachments = const [];
+    try {
+      attachments = await ref
+          .read(smartschoolMessagesProvider.notifier)
+          .listAttachments(header.id);
     } catch (_) {}
-    return _MessageDetailPayload(detail: detail, attachments: attachments);
+
+    return _MessageDetailPayload(
+      detail: fallbackDetail,
+      attachments: attachments,
+    );
+  }
+
+  Future<void> _dumpDetailLoadDiagnostics(
+    WidgetRef ref,
+    SmartschoolAuthController authNotifier, {
+    required Object error,
+    required StackTrace stackTrace,
+  }) async {
+    if (!_isBridgeDetailPayloadError(error)) return;
+
+    final db = ref.read(appDatabaseProvider);
+    final local = await db.messagesDao.findMessage(
+      source: 'smartschool',
+      externalId: header.id.toString(),
+    );
+
+    final stderrLines = authNotifier.bridge.stderrLog;
+    final stderrTail = stderrLines.length <= 80
+        ? stderrLines
+        : stderrLines.sublist(stderrLines.length - 80);
+
+    final buffer = StringBuffer()
+      ..writeln('========== Smartschool Detail Load Debug ==========')
+      ..writeln('messageId: ${header.id}')
+      ..writeln('subject: ${header.subject}')
+      ..writeln('from: ${header.from}')
+      ..writeln('error: $error')
+      ..writeln('stackTrace: $stackTrace')
+      ..writeln('--- Header DTO ---')
+      ..writeln(
+        jsonEncode({
+          'id': header.id,
+          'from': header.from,
+          'subject': header.subject,
+          'date': header.date,
+          'real_box': header.realBox,
+          'send_date': header.sendDate,
+        }),
+      )
+      ..writeln('--- Local DB Snapshot ---');
+
+    if (local == null) {
+      buffer.writeln('No local message row found for this message ID.');
+    } else {
+      buffer
+        ..writeln('localId: ${local.id}')
+        ..writeln('mailbox: ${local.mailbox}')
+        ..writeln('sentAt: ${local.sentAt}')
+        ..writeln('receivedAt: ${local.receivedAt}')
+        ..writeln('rawHeaderJson: ${local.rawHeaderJson ?? '<null>'}')
+        ..writeln('rawDetailJson: ${local.rawDetailJson ?? '<null>'}');
+    }
+
+    buffer
+      ..writeln('--- Python bridge stderr tail ---')
+      ..writeln(stderrTail.isEmpty ? '<empty>' : stderrTail.join('\n'))
+      ..writeln('===================================================');
+
+    debugPrint(buffer.toString());
+    ref
+        .read(statusProvider.notifier)
+        .add(
+          StatusEntryType.warning,
+          'Detail debug dumped to console for message ${header.id}.',
+        );
+  }
+
+  bool _isBridgeDetailPayloadError(Object error) {
+    if (error is! SmartschoolBridgeException) return false;
+
+    final text = error.toString().toLowerCase();
+    if (text.contains('smartschoolparsingerror')) return true;
+
+    final isValidation = text.contains('validationerror');
+    final isFullMessageContext =
+        text.contains('fullmessage') || text.contains('pydantic');
+
+    return isValidation && isFullMessageContext;
   }
 
   Future<void> _handleAttachmentTap(

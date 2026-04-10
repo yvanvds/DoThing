@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -166,6 +167,25 @@ class SmartschoolMessageCacheController
       return state[messageId]!;
     }
 
+    AppDatabase? db;
+    try {
+      db = ref.read(appDatabaseProvider);
+    } catch (_) {
+      db = null;
+    }
+
+    if (db != null) {
+      final local = await db.messagesDao.findMessage(
+        source: 'smartschool',
+        externalId: messageId.toString(),
+      );
+      if (_hasPersistedFullDetail(local)) {
+        final localDetail = _detailFromLocalRow(local!, messageId);
+        state = {...state, messageId: localDetail};
+        return localDetail;
+      }
+    }
+
     final messages = await bridge.getMessage(messageId);
     if (messages.isEmpty) {
       throw StateError('No message detail returned for ID $messageId');
@@ -174,14 +194,74 @@ class SmartschoolMessageCacheController
     final detail = messages.first;
     state = {...state, messageId: detail};
 
-    // Persist detail to local database (non-fatal if it fails).
-    if (syncRepository != null) {
+    var repository = syncRepository;
+    if (repository == null) {
       try {
-        await syncRepository.syncDetail(detail);
+        repository = ref.read(smartschoolSyncRepositoryProvider);
+      } catch (_) {
+        repository = null;
+      }
+    }
+
+    // Persist detail to local database (non-fatal if it fails).
+    if (repository != null) {
+      try {
+        await repository.syncDetail(detail);
       } catch (_) {}
     }
 
     return detail;
+  }
+
+  bool _hasPersistedFullDetail(Message? row) {
+    if (row == null) return false;
+    if (row.detailFetchedAt == null) return false;
+
+    final raw = row.bodyRaw?.trim() ?? '';
+    final text = row.bodyText?.trim() ?? '';
+    return raw.isNotEmpty || text.isNotEmpty;
+  }
+
+  SmartschoolMessageDetail _detailFromLocalRow(Message row, int messageId) {
+    Map<String, dynamic>? rawDetail;
+    final rawJson = row.rawDetailJson;
+    if (rawJson != null && rawJson.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(rawJson);
+        if (decoded is Map<String, dynamic>) {
+          rawDetail = decoded;
+        }
+      } catch (_) {}
+    }
+
+    return SmartschoolMessageDetail(
+      id: messageId,
+      from: (rawDetail?['from'] as String?) ?? '',
+      subject: (rawDetail?['subject'] as String?) ?? row.subject,
+      body: row.bodyRaw ?? row.bodyText ?? '',
+      date: (rawDetail?['date'] as String?) ?? row.receivedAt.toIso8601String(),
+      to: rawDetail?['to'] as String?,
+      status: (rawDetail?['status'] as int?) ?? (row.isRead ? 1 : 0),
+      attachment:
+          (rawDetail?['attachment'] as int?) ?? (row.hasAttachments ? 1 : 0),
+      unread: (rawDetail?['unread'] as bool?) ?? !row.isRead,
+      label: rawDetail?['label'] as bool?,
+      receivers: rawDetail?['receivers'],
+      ccReceivers: rawDetail?['ccreceivers'],
+      bccReceivers: rawDetail?['bccreceivers'],
+      senderPicture: rawDetail?['sender_picture'] as String?,
+      fromTeam: rawDetail?['from_team'] as int?,
+      totalNrOtherToReceivers:
+          rawDetail?['total_nr_other_to_reciviers'] as int?,
+      totalNrOtherCcReceivers:
+          rawDetail?['total_nr_other_cc_receivers'] as int?,
+      totalNrOtherBccReceivers:
+          rawDetail?['total_nr_other_bcc_receivers'] as int?,
+      canReply: rawDetail?['can_reply'] as bool?,
+      hasReply: rawDetail?['has_reply'] as bool?,
+      hasForward: rawDetail?['has_forward'] as bool?,
+      sendDate: rawDetail?['send_date'] as String?,
+    );
   }
 
   /// Clear the cache.

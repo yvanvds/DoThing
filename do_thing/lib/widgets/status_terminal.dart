@@ -3,6 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../controllers/status_controller.dart';
 
+String _formatTime(DateTime timestamp) {
+  final hour = timestamp.hour.toString().padLeft(2, '0');
+  final minute = timestamp.minute.toString().padLeft(2, '0');
+  final second = timestamp.second.toString().padLeft(2, '0');
+  return '$hour:$minute:$second';
+}
+
 class StatusTerminal extends ConsumerStatefulWidget {
   const StatusTerminal({super.key});
 
@@ -100,7 +107,7 @@ class _TerminalLine extends StatelessWidget {
     final (color, prefix) = switch (entry.type) {
       StatusEntryType.info => (
         Theme.of(context).colorScheme.onSurfaceVariant,
-        '>',
+        '',
       ),
       StatusEntryType.success => (Colors.green.shade400, '✔'),
       StatusEntryType.warning => (Colors.orange.shade400, '!'),
@@ -112,12 +119,26 @@ class _TerminalLine extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SelectableText(
-            '$prefix ',
-            style: TextStyle(
-              fontFamily: 'monospace',
-              fontSize: 12,
-              color: color,
+          SizedBox(
+            width: 20,
+            child: SelectableText(
+              '$prefix',
+              style: TextStyle(
+                fontFamily: 'monospace',
+                fontSize: 12,
+                color: color,
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 68,
+            child: SelectableText(
+              '${_formatTime(entry.timestamp)} ',
+              style: TextStyle(
+                fontFamily: 'monospace',
+                fontSize: 12,
+                color: color,
+              ),
             ),
           ),
           Expanded(

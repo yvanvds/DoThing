@@ -132,6 +132,51 @@ void main() {
         throwsA(isA<StateError>()),
       );
     });
+
+    test(
+      'getOrFetch uses persisted full detail before refetching remote',
+      () async {
+        final db = AppDatabase(NativeDatabase.memory());
+        addTearDown(db.close);
+        final repo = SmartschoolSyncRepository(db);
+        await repo.syncHeaders([_header(id: 901, unread: true)]);
+        await repo.syncDetail(
+          const SmartschoolMessageDetail(
+            id: 901,
+            from: 'Teacher',
+            subject: 'Stored',
+            body: '<p>Stored body</p>',
+            date: '2026-04-10T12:00:00Z',
+          ),
+        );
+
+        final bridge = _FakeBridge((_) async {
+          return const [
+            SmartschoolMessageDetail(
+              id: 901,
+              from: 'Teacher',
+              subject: 'Remote',
+              body: '<p>Remote body</p>',
+              date: '2026-04-10T12:00:00Z',
+            ),
+          ];
+        });
+
+        final container = ProviderContainer(
+          overrides: [appDatabaseProvider.overrideWithValue(db)],
+        );
+        addTearDown(container.dispose);
+
+        final notifier = container.read(
+          smartschoolMessageCacheProvider.notifier,
+        );
+        final detail = await notifier.getOrFetch(901, bridge);
+
+        expect(detail.subject, 'Stored');
+        expect(detail.body, '<p>Stored body</p>');
+        expect(bridge.getMessageCalls, 0);
+      },
+    );
   });
 
   group('SmartschoolPollingController', () {

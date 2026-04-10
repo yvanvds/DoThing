@@ -2,9 +2,44 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/smartschool_message.dart';
 import '../providers/database_provider.dart';
+import 'smartschool_settings_controller.dart';
 import 'status_controller.dart';
 import '../services/smartschool_auth_service.dart';
 import '../services/smartschool_messages_service.dart';
+
+enum SmartschoolRelatedItemType { message }
+
+class SmartschoolRelatedItem {
+  const SmartschoolRelatedItem({
+    required this.type,
+    required this.activityAt,
+    required this.messageHeader,
+  });
+
+  final SmartschoolRelatedItemType type;
+  final DateTime activityAt;
+  final SmartschoolMessageHeader messageHeader;
+}
+
+class SmartschoolContactInbox {
+  const SmartschoolContactInbox({
+    required this.contactId,
+    required this.displayName,
+    required this.avatarUrl,
+    required this.latestActivityAt,
+    required this.unreadCount,
+    required this.items,
+  });
+
+  final int contactId;
+  final String displayName;
+  final String? avatarUrl;
+  final DateTime latestActivityAt;
+  final int unreadCount;
+  final List<SmartschoolRelatedItem> items;
+
+  int get itemCount => items.length;
+}
 
 /// Startup inbox loader.
 ///
@@ -17,6 +52,7 @@ import '../services/smartschool_messages_service.dart';
 /// already read, so unread state must be inverted.
 class SmartschoolInboxController extends AsyncNotifier<int> {
   List<SmartschoolMessageThread>? _cachedThreads; // add this
+  bool _sentBootstrapDone = false;
 
   @override
   Future<int> build() async {
@@ -99,6 +135,80 @@ class SmartschoolInboxController extends AsyncNotifier<int> {
     }
   }
 
+  /// Refresh inbox and return latest headers grouped by contact.
+  ///
+  /// Contacts are ordered by latest related item (desc).
+  /// Items in each contact are ordered newest first.
+  Future<List<SmartschoolContactInbox>> refreshInboxAndGetContactInboxes({
+    bool showLoading = true,
+  }) async {
+    if (showLoading) {
+      state = const AsyncLoading();
+    }
+
+    try {
+      await _fetchInboxHeaders();
+
+      final db = ref.read(appDatabaseProvider);
+      final settings = await ref.read(smartschoolSettingsProvider.future);
+      final currentUserName = settings.username.trim().toLowerCase();
+      final selfContactIds = await db.messagesDao.getSentSenderContactIds();
+      final summaries = await db.messagesDao.getInboxContactSummaries();
+
+      final contacts = <SmartschoolContactInbox>[];
+      for (final summary in summaries) {
+        final isCurrentUserContact =
+            selfContactIds.contains(summary.contactId) ||
+            (currentUserName.isNotEmpty &&
+                summary.displayName.trim().toLowerCase() == currentUserName);
+
+        final headers = await db.messagesDao.getInboxHeadersForContact(
+          summary.contactId,
+          onlySelfSentToSelf: isCurrentUserContact,
+        );
+        final items = headers
+            .map(
+              (header) => SmartschoolRelatedItem(
+                type: SmartschoolRelatedItemType.message,
+                activityAt:
+                    DateTime.tryParse(header.date) ?? summary.latestActivityAt,
+                messageHeader: header,
+              ),
+            )
+            .toList();
+
+        if (items.isEmpty) continue;
+
+        contacts.add(
+          SmartschoolContactInbox(
+            contactId: summary.contactId,
+            displayName: summary.displayName,
+            avatarUrl: summary.avatarUrl,
+            latestActivityAt: items.first.activityAt,
+            unreadCount: headers.where((h) => h.unread).length,
+            items: items,
+          ),
+        );
+      }
+
+      contacts.sort((a, b) => b.latestActivityAt.compareTo(a.latestActivityAt));
+
+      final unread = contacts.fold<int>(0, (sum, c) => sum + c.unreadCount);
+      state = AsyncData(unread);
+      return contacts;
+    } catch (error) {
+      ref
+          .read(statusProvider.notifier)
+          .add(StatusEntryType.error, _friendlyInboxError(error));
+
+      if (showLoading) {
+        state = const AsyncData(0);
+      }
+
+      return const [];
+    }
+  }
+
   Future<List<SmartschoolMessageHeader>> _fetchInboxHeaders() async {
     final status = ref.read(statusProvider.notifier);
 
@@ -121,6 +231,8 @@ class SmartschoolInboxController extends AsyncNotifier<int> {
         .read(smartschoolMessagesProvider.notifier)
         .getHeaders(boxType: SmartschoolBoxType.inbox);
 
+    await _bootstrapSentHeadersAndDetailsOnce();
+
     // Persist headers to the local database.
     try {
       final persisted = await ref
@@ -141,6 +253,42 @@ class SmartschoolInboxController extends AsyncNotifier<int> {
         .initializeWithSeenIds(messageIds);
 
     return headers;
+  }
+
+  Future<void> _bootstrapSentHeadersAndDetailsOnce() async {
+    if (_sentBootstrapDone) return;
+
+    final status = ref.read(statusProvider.notifier);
+    final messagesService = ref.read(smartschoolMessagesProvider.notifier);
+    final syncRepository = ref.read(smartschoolSyncRepositoryProvider);
+
+    try {
+      final sentHeaders = await messagesService.getHeaders(
+        boxType: SmartschoolBoxType.sent,
+      );
+
+      await syncRepository.syncHeaders(sentHeaders, mailbox: 'sent');
+
+      int detailSynced = 0;
+      for (final header in sentHeaders) {
+        try {
+          final details = await messagesService.getMessage(header.id);
+          if (details.isEmpty) continue;
+          await syncRepository.syncDetail(details.first);
+          detailSynced++;
+        } catch (_) {
+          // Best-effort detail enrichment per sent item.
+        }
+      }
+
+      _sentBootstrapDone = true;
+      status.add(
+        StatusEntryType.info,
+        'Sent bootstrap: ${sentHeaders.length} headers synced · $detailSynced details enriched.',
+      );
+    } catch (error) {
+      status.add(StatusEntryType.warning, 'Sent bootstrap failed: $error');
+    }
   }
 
   Future<List<SmartschoolMessageThread>> _fetchInboxThreads() async {

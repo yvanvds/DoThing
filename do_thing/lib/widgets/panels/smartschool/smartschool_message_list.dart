@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../controllers/smartschool_inbox_controller.dart';
 import '../../../controllers/status_controller.dart';
-import '../../../models/smartschool_message.dart';
 import '../../../services/smartschool_messages_service.dart';
 import 'smartschool_message_header_tile.dart';
 
@@ -19,10 +18,10 @@ class _SmartschoolMessageListState
     extends ConsumerState<SmartschoolMessageList> {
   bool _isLoading = true;
   String? _errorText;
-  List<SmartschoolMessageThread> _threads = const [];
+  String _query = '';
+  List<SmartschoolContactInbox> _contacts = const [];
 
-  /// Thread keys that are currently expanded; all others are collapsed.
-  final Set<String> _expandedThreads = {};
+  final Set<int> _expandedContacts = {};
 
   @override
   void initState() {
@@ -44,44 +43,76 @@ class _SmartschoolMessageListState
     });
 
     try {
-      final threads = await ref
+      final contacts = await ref
           .read(smartschoolInboxProvider.notifier)
-          .refreshInboxAndGetThreads(showLoading: false);
+          .refreshInboxAndGetContactInboxes(showLoading: false);
       if (!mounted) return;
       setState(() {
-        _threads = threads;
+        _contacts = contacts;
         _isLoading = false;
       });
+
+      final selected = ref.read(smartschoolSelectedMessageProvider);
+      if (selected != null && !_containsMessage(selected.id)) {
+        ref.read(smartschoolSelectedMessageProvider.notifier).select(null);
+      }
     } catch (error) {
       ref
           .read(statusProvider.notifier)
-          .add(StatusEntryType.error, 'Failed to load messages: $error');
+          .add(StatusEntryType.error, 'Failed to load contacts: $error');
       if (!mounted) return;
       setState(() {
         _isLoading = false;
-        _errorText = 'Failed to load messages.';
+        _errorText = 'Failed to load contacts.';
       });
     }
   }
 
+  bool _containsMessage(int messageId) {
+    for (final contact in _contacts) {
+      if (contact.items.any((item) => item.messageHeader.id == messageId)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   void _removeHeaderFromList(int messageId) {
-    final updated = <SmartschoolMessageThread>[];
-    for (final thread in _threads) {
-      final filtered = thread.messages.where((h) => h.id != messageId).toList();
-      if (filtered.isEmpty) continue;
-      updated.add(
-        SmartschoolMessageThread(
-          threadKey: thread.threadKey,
-          subject: filtered.first.subject,
-          latestDate: filtered.first.date,
-          messageCount: filtered.length,
-          hasUnread: filtered.any((h) => h.unread),
-          hasReply: thread.hasReply,
-          messages: filtered,
+    final updatedContacts = <SmartschoolContactInbox>[];
+
+    for (final contact in _contacts) {
+      final remainingItems = contact.items
+          .where((item) => item.messageHeader.id != messageId)
+          .toList();
+      if (remainingItems.isEmpty) continue;
+
+      final unreadCount = remainingItems
+          .where((item) => item.messageHeader.unread)
+          .length;
+      final latestActivityAt = remainingItems.first.activityAt;
+
+      updatedContacts.add(
+        SmartschoolContactInbox(
+          contactId: contact.contactId,
+          displayName: contact.displayName,
+          avatarUrl: contact.avatarUrl,
+          latestActivityAt: latestActivityAt,
+          unreadCount: unreadCount,
+          items: remainingItems,
         ),
       );
     }
-    setState(() => _threads = updated);
+
+    updatedContacts.sort(
+      (a, b) => b.latestActivityAt.compareTo(a.latestActivityAt),
+    );
+
+    setState(() {
+      _contacts = updatedContacts;
+      _expandedContacts.removeWhere(
+        (contactId) => !_contacts.any((c) => c.contactId == contactId),
+      );
+    });
 
     final selected = ref.read(smartschoolSelectedMessageProvider);
     if (selected?.id == messageId) {
@@ -90,28 +121,31 @@ class _SmartschoolMessageListState
   }
 
   void _updateHeaderInList(SmartschoolMessageHeader updatedHeader) {
-    final updated = <SmartschoolMessageThread>[];
-    for (final thread in _threads) {
-      final idx = thread.messages.indexWhere((h) => h.id == updatedHeader.id);
-      if (idx == -1) {
-        updated.add(thread);
-        continue;
-      }
-      final msgs = [...thread.messages];
-      msgs[idx] = updatedHeader;
-      updated.add(
-        SmartschoolMessageThread(
-          threadKey: thread.threadKey,
-          subject: thread.subject,
-          latestDate: thread.latestDate,
-          messageCount: msgs.length,
-          hasUnread: msgs.any((h) => h.unread),
-          hasReply: thread.hasReply,
-          messages: msgs,
-        ),
+    final updatedContacts = _contacts.map((contact) {
+      final updatedItems = contact.items.map((item) {
+        if (item.messageHeader.id != updatedHeader.id) return item;
+        return SmartschoolRelatedItem(
+          type: item.type,
+          activityAt: item.activityAt,
+          messageHeader: updatedHeader,
+        );
+      }).toList();
+
+      final unreadCount = updatedItems
+          .where((item) => item.messageHeader.unread)
+          .length;
+
+      return SmartschoolContactInbox(
+        contactId: contact.contactId,
+        displayName: contact.displayName,
+        avatarUrl: contact.avatarUrl,
+        latestActivityAt: contact.latestActivityAt,
+        unreadCount: unreadCount,
+        items: updatedItems,
       );
-    }
-    setState(() => _threads = updated);
+    }).toList();
+
+    setState(() => _contacts = updatedContacts);
 
     final selected = ref.read(smartschoolSelectedMessageProvider);
     if (selected?.id == updatedHeader.id) {
@@ -121,13 +155,31 @@ class _SmartschoolMessageListState
     }
   }
 
+  void _toggleContact(SmartschoolContactInbox contact) {
+    setState(() {
+      if (_expandedContacts.contains(contact.contactId)) {
+        _expandedContacts.clear();
+      } else {
+        _expandedContacts
+          ..clear()
+          ..add(contact.contactId);
+      }
+    });
+
+    if (contact.items.isNotEmpty) {
+      ref
+          .read(smartschoolSelectedMessageProvider.notifier)
+          .select(contact.items.first.messageHeader);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final filtered = _filteredContacts();
 
     return Column(
       children: [
-        // ── header bar ────────────────────────────────────────────────────
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
           decoration: BoxDecoration(
@@ -139,21 +191,35 @@ class _SmartschoolMessageListState
             children: [
               const Expanded(
                 child: Text(
-                  'Messages',
+                  'Contacts',
                   style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
                 ),
               ),
               IconButton(
                 onPressed: _refresh,
                 icon: const Icon(Icons.refresh, size: 18),
-                tooltip: 'Refresh messages',
+                tooltip: 'Refresh contacts',
                 visualDensity: VisualDensity.compact,
               ),
             ],
           ),
         ),
-
-        // ── body ──────────────────────────────────────────────────────────
+        Padding(
+          padding: const EdgeInsets.fromLTRB(8, 8, 8, 6),
+          child: TextField(
+            onChanged: (value) => setState(() => _query = value),
+            decoration: InputDecoration(
+              isDense: true,
+              hintText: 'Search contacts',
+              prefixIcon: const Icon(Icons.search, size: 18),
+              border: const OutlineInputBorder(),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 10,
+                vertical: 10,
+              ),
+            ),
+          ),
+        ),
         Expanded(
           child: _isLoading
               ? const Center(child: CircularProgressIndicator())
@@ -165,10 +231,10 @@ class _SmartschoolMessageListState
                     style: TextStyle(color: colorScheme.error, fontSize: 12),
                   ),
                 )
-              : _threads.isEmpty
+              : filtered.isEmpty
               ? Center(
                   child: Text(
-                    'No messages',
+                    _contacts.isEmpty ? 'No contacts' : 'No matching contacts',
                     style: TextStyle(
                       fontSize: 12,
                       color: colorScheme.onSurfaceVariant,
@@ -176,13 +242,13 @@ class _SmartschoolMessageListState
                   ),
                 )
               : ListView.builder(
-                  itemCount: _threads.length,
+                  itemCount: filtered.length,
                   itemBuilder: (context, index) {
-                    final thread = _threads[index];
-                    return _ThreadTile(
-                      thread: thread,
-                      isExpanded: _expandedThreads.contains(thread.threadKey),
-                      onToggleExpand: () => _toggleThread(thread.threadKey),
+                    final contact = filtered[index];
+                    return _ContactTile(
+                      contact: contact,
+                      isExpanded: _expandedContacts.contains(contact.contactId),
+                      onToggleExpand: () => _toggleContact(contact),
                       onRemoveFromList: _removeHeaderFromList,
                       onHeaderUpdated: _updateHeaderInList,
                     );
@@ -193,31 +259,26 @@ class _SmartschoolMessageListState
     );
   }
 
-  void _toggleThread(String threadKey) {
-    setState(() {
-      if (_expandedThreads.contains(threadKey)) {
-        _expandedThreads.remove(threadKey);
-      } else {
-        _expandedThreads.add(threadKey);
-      }
-    });
+  List<SmartschoolContactInbox> _filteredContacts() {
+    final query = _query.trim().toLowerCase();
+    if (query.isEmpty) return _contacts;
+
+    return _contacts
+        .where((contact) => contact.displayName.toLowerCase().contains(query))
+        .toList();
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Thread tile – renders a single thread row (collapsed or expanded).
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _ThreadTile extends StatelessWidget {
-  const _ThreadTile({
-    required this.thread,
+class _ContactTile extends StatelessWidget {
+  const _ContactTile({
+    required this.contact,
     required this.isExpanded,
     required this.onToggleExpand,
     required this.onRemoveFromList,
     required this.onHeaderUpdated,
   });
 
-  final SmartschoolMessageThread thread;
+  final SmartschoolContactInbox contact;
   final bool isExpanded;
   final VoidCallback onToggleExpand;
   final ValueChanged<int> onRemoveFromList;
@@ -225,29 +286,18 @@ class _ThreadTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Single-message threads are rendered directly without grouping chrome.
-    if (thread.messageCount <= 1) {
-      return SmartschoolMessageHeaderTile(
-        header: thread.messages.first,
-        onRemoveFromList: onRemoveFromList,
-        onHeaderUpdated: onHeaderUpdated,
-      );
-    }
-
     final colorScheme = Theme.of(context).colorScheme;
-    final newestMessage = thread.messages.first;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // ── collapsed summary row ───────────────────────────────────────
         Material(
           color: Colors.transparent,
           child: InkWell(
             onTap: onToggleExpand,
             child: Container(
               decoration: BoxDecoration(
-                color: thread.hasUnread
+                color: contact.unreadCount > 0
                     ? colorScheme.primaryContainer.withValues(alpha: 0.15)
                     : Colors.transparent,
                 border: Border(
@@ -262,47 +312,50 @@ class _ThreadTile extends StatelessWidget {
                     size: 18,
                     color: colorScheme.onSurfaceVariant,
                   ),
-                  const SizedBox(width: 6),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 1,
-                    ),
-                    decoration: BoxDecoration(
-                      color: colorScheme.primaryContainer,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      '${thread.messageCount}',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: colorScheme.onPrimaryContainer,
-                      ),
-                    ),
-                  ),
                   const SizedBox(width: 8),
+                  CircleAvatar(
+                    radius: 16,
+                    backgroundColor: colorScheme.surfaceContainerHighest,
+                    foregroundImage:
+                        contact.avatarUrl != null &&
+                            contact.avatarUrl!.trim().isNotEmpty
+                        ? NetworkImage(contact.avatarUrl!)
+                        : null,
+                    child:
+                        contact.avatarUrl == null ||
+                            contact.avatarUrl!.trim().isEmpty
+                        ? Text(
+                            _initial(contact.displayName),
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: colorScheme.onSurfaceVariant,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          )
+                        : null,
+                  ),
+                  const SizedBox(width: 10),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          thread.subject,
+                          contact.displayName,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontSize: 13,
-                            fontWeight: thread.hasUnread
+                            fontWeight: contact.unreadCount > 0
                                 ? FontWeight.w700
                                 : FontWeight.w500,
-                            color: thread.hasUnread
+                            color: contact.unreadCount > 0
                                 ? colorScheme.primary
                                 : colorScheme.onSurface,
                           ),
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          newestMessage.from,
+                          '${contact.itemCount} related item${contact.itemCount == 1 ? '' : 's'}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
@@ -313,9 +366,29 @@ class _ThreadTile extends StatelessWidget {
                       ],
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  if (contact.unreadCount > 0) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 1,
+                      ),
+                      decoration: BoxDecoration(
+                        color: colorScheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        '${contact.unreadCount}',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: colorScheme.onPrimaryContainer,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
                   Text(
-                    _formatDate(newestMessage.date),
+                    _formatDate(contact.latestActivityAt.toIso8601String()),
                     style: TextStyle(
                       fontSize: 11,
                       color: colorScheme.onSurfaceVariant,
@@ -326,8 +399,6 @@ class _ThreadTile extends StatelessWidget {
             ),
           ),
         ),
-
-        // ── expanded children ──────────────────────────────────────────
         if (isExpanded)
           Container(
             decoration: BoxDecoration(
@@ -342,9 +413,9 @@ class _ThreadTile extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                for (final header in thread.messages)
+                for (final item in contact.items)
                   SmartschoolMessageHeaderTile(
-                    header: header,
+                    header: item.messageHeader,
                     onRemoveFromList: onRemoveFromList,
                     onHeaderUpdated: onHeaderUpdated,
                   ),
@@ -353,6 +424,12 @@ class _ThreadTile extends StatelessWidget {
           ),
       ],
     );
+  }
+
+  String _initial(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) return '?';
+    return trimmed.characters.first.toUpperCase();
   }
 
   String _formatDate(String raw) {
