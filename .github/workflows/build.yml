@@ -19,15 +19,9 @@ jobs:
           
       # The analysis requires to retrieve dependencies and build successfully
       - name: Setup Flutter
-        env:
-          FLUTTER_SHA: 8bf2090718fea3655f466049a757f823898f0ad1 # replace with a real Flutter commit
-        run: |
-          git init "$env:RUNNER_TEMP\flutter"
-          git -C "$env:RUNNER_TEMP\flutter" remote add origin https://github.com/flutter/flutter.git
-          git -C "$env:RUNNER_TEMP\flutter" fetch --depth 1 origin $env:FLUTTER_SHA
-          git -C "$env:RUNNER_TEMP\flutter" checkout --detach $env:FLUTTER_SHA
-          "$env:RUNNER_TEMP\flutter\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-          flutter --version
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 'stable'
 
       - name: Install dependencies
         run: flutter pub get
