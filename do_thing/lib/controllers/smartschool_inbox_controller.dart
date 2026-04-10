@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/smartschool_message.dart';
+import '../providers/database_provider.dart';
 import 'status_controller.dart';
 import '../services/smartschool_auth_service.dart';
 import '../services/smartschool_messages_service.dart';
@@ -120,6 +121,19 @@ class SmartschoolInboxController extends AsyncNotifier<int> {
         .read(smartschoolMessagesProvider.notifier)
         .getHeaders(boxType: SmartschoolBoxType.inbox);
 
+    // Persist headers to the local database.
+    try {
+      final persisted = await ref
+          .read(smartschoolSyncRepositoryProvider)
+          .syncHeaders(headers);
+      status.add(
+        StatusEntryType.info,
+        'Inbox: ${headers.length} headers fetched · $persisted new/updated persisted.',
+      );
+    } catch (error) {
+      status.add(StatusEntryType.warning, 'Local inbox sync failed: $error');
+    }
+
     // Initialize polling with the seen message IDs
     final messageIds = headers.map((h) => h.id).toList();
     ref
@@ -150,6 +164,23 @@ class SmartschoolInboxController extends AsyncNotifier<int> {
     final threads = await ref
         .read(smartschoolMessagesProvider.notifier)
         .getThreadedHeaders(boxType: SmartschoolBoxType.inbox);
+
+    // Persist all headers from every thread to the local database.
+    final allHeaders = threads.expand((t) => t.messages).toList();
+    try {
+      final persisted = await ref
+          .read(smartschoolSyncRepositoryProvider)
+          .syncHeaders(allHeaders);
+      status.add(
+        StatusEntryType.info,
+        'Inbox: ${allHeaders.length} headers fetched · $persisted new/updated persisted.',
+      );
+    } catch (error) {
+      status.add(
+        StatusEntryType.warning,
+        'Local threaded inbox sync failed: $error',
+      );
+    }
 
     // Initialize polling with all seen message IDs across threads
     final messageIds = threads

@@ -3,10 +3,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'config/theme.dart';
 import 'controllers/theme_mode_controller.dart';
+import 'providers/database_provider.dart';
 import 'widgets/app_shell.dart';
 
-void main() {
-  runApp(const ProviderScope(child: MainApp()));
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final db = AppDatabase.openInAppSupport();
+
+  runApp(
+    ProviderScope(
+      overrides: [appDatabaseProvider.overrideWithValue(db)],
+      child: const MainApp(),
+    ),
+  );
 }
 
 class MainApp extends ConsumerWidget {

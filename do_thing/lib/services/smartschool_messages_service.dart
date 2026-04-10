@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../controllers/status_controller.dart';
 import '../models/smartschool_message.dart';
 export '../models/smartschool_message.dart' show SmartschoolMessageHeader;
+import '../providers/database_provider.dart';
 import 'smartschool_auth_service.dart';
 import 'smartschool_bridge.dart';
 
@@ -154,11 +155,13 @@ class SmartschoolMessageCacheController
   /// Get a cached message, fetching if not present.
   ///
   /// If [messageId] is already in cache, returns immediately.
-  /// Otherwise fetches from Smartschool and caches the result.
+  /// Otherwise fetches from Smartschool, caches the result, and persists it
+  /// to the local database.
   Future<SmartschoolMessageDetail> getOrFetch(
     int messageId,
-    SmartschoolBridge bridge,
-  ) async {
+    SmartschoolBridge bridge, {
+    SmartschoolSyncRepository? syncRepository,
+  }) async {
     if (state.containsKey(messageId)) {
       return state[messageId]!;
     }
@@ -170,6 +173,14 @@ class SmartschoolMessageCacheController
 
     final detail = messages.first;
     state = {...state, messageId: detail};
+
+    // Persist detail to local database (non-fatal if it fails).
+    if (syncRepository != null) {
+      try {
+        await syncRepository.syncDetail(detail);
+      } catch (_) {}
+    }
+
     return detail;
   }
 
@@ -187,11 +198,12 @@ final smartschoolMessageCacheProvider =
 /// Manages polling for new messages every 5 minutes.
 ///
 /// Tracks already-seen message IDs and periodically fetches new ones.
+/// Uses client-side filtering to ensure only truly new messages are shown.
 /// New messages are accumulated in the state.
 class SmartschoolPollingController
     extends Notifier<List<SmartschoolMessageHeader>> {
   Timer? _pollTimer;
-  final List<int> _seenIds = [];
+  final Set<int> _seenIds = {};
   bool _isPolling = false;
 
   @override
@@ -233,19 +245,44 @@ class SmartschoolPollingController
     try {
       final messagesService = ref.read(smartschoolMessagesProvider.notifier);
 
-      final newMessages = await messagesService.getHeaders(
+      // Fetch all messages (don't rely on server-side filtering).
+      final allMessages = await messagesService.getHeaders(
         boxType: SmartschoolBoxType.inbox,
-        alreadySeenIds: _seenIds,
+        alreadySeenIds: const [],
       );
+
+      // Persist all fetched headers to the local database (idempotent upsert).
+      // This runs before the in-memory new-message check so the DB stays in
+      // sync regardless of how the UI layer tracks state.
+      try {
+        final persisted = await ref
+            .read(smartschoolSyncRepositoryProvider)
+            .syncHeaders(allMessages);
+        if (persisted > 0) {
+          ref
+              .read(statusProvider.notifier)
+              .add(
+                StatusEntryType.info,
+                'Poll: ${allMessages.length} headers fetched · $persisted new/updated persisted.',
+              );
+        }
+      } catch (error) {
+        ref
+            .read(statusProvider.notifier)
+            .add(StatusEntryType.warning, 'Polling local sync failed: $error');
+      }
+
+      // Filter client-side: only messages not in our local cache are truly new.
+      final newMessages = allMessages
+          .where((msg) => !_seenIds.contains(msg.id))
+          .toList();
 
       if (newMessages.isNotEmpty) {
         foundNewMessages = true;
 
         // Add new IDs to seen list
         for (final msg in newMessages) {
-          if (!_seenIds.contains(msg.id)) {
-            _seenIds.add(msg.id);
-          }
+          _seenIds.add(msg.id);
         }
 
         // Accumulate new messages in state

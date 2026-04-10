@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_all/webview_all.dart';
 
 import '../../../models/smartschool_message.dart';
+import '../../../providers/database_provider.dart';
 import '../../../services/smartschool_messages_service.dart';
 import '../../../services/smartschool_auth_service.dart';
 
@@ -24,12 +25,17 @@ class SmartschoolMessageDetailView extends ConsumerWidget {
     WidgetRef ref,
     SmartschoolAuthController authNotifier,
   ) async {
+    final syncRepo = ref.read(smartschoolSyncRepositoryProvider);
     final detail = await ref
         .read(smartschoolMessageCacheProvider.notifier)
-        .getOrFetch(header.id, authNotifier.bridge);
+        .getOrFetch(header.id, authNotifier.bridge, syncRepository: syncRepo);
     final attachments = await ref
         .read(smartschoolMessagesProvider.notifier)
         .listAttachments(header.id);
+    // Persist attachment metadata to the local database.
+    try {
+      await syncRepo.syncAttachments(header.id, attachments);
+    } catch (_) {}
     return _MessageDetailPayload(detail: detail, attachments: attachments);
   }
 
