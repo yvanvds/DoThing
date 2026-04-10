@@ -15,6 +15,8 @@ import '../services/smartschool_messages_service.dart';
 /// Important: Smartschool's `header.unread == true` means the message is
 /// already read, so unread state must be inverted.
 class SmartschoolInboxController extends AsyncNotifier<int> {
+  List<SmartschoolMessageThread>? _cachedThreads; // add this
+
   @override
   Future<int> build() async {
     try {
@@ -65,12 +67,18 @@ class SmartschoolInboxController extends AsyncNotifier<int> {
   Future<List<SmartschoolMessageThread>> refreshInboxAndGetThreads({
     bool showLoading = true,
   }) async {
+    // Return cached threads if already loaded and not explicitly refreshing
+    if (_cachedThreads != null && !showLoading) {
+      return _cachedThreads!;
+    }
+
     if (showLoading) {
       state = const AsyncLoading();
     }
 
     try {
       final threads = await _fetchInboxThreads();
+      _cachedThreads = threads; // cache the result
       final unread = threads.fold<int>(
         0,
         (sum, t) => sum + t.messages.where((h) => h.unread).length,

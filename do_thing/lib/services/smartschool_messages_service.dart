@@ -220,8 +220,7 @@ class SmartschoolPollingController
 
     _isPolling = true;
 
-    // Poll immediately, then every 5 minutes
-    _pollOnce();
+    // Wait one full interval before first poll, since inbox was just fetched on startup.
     _pollTimer = Timer.periodic(const Duration(minutes: 5), (_) {
       _pollOnce();
     });
