@@ -9,6 +9,9 @@ jobs:
   sonarqube:
     name: SonarQube
     runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: do_thing
     steps:
       - uses: actions/checkout@v4
         with:
@@ -18,7 +21,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: 'stable'
+          channel: stable
 
       - name: Install dependencies
         run: flutter pub get
