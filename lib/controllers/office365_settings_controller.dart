@@ -28,11 +28,13 @@ class Office365SettingsController extends AsyncNotifier<Office365Settings> {
         scopes:
             data['scopes'] as String? ??
             'offline_access openid profile Mail.Read',
-        accessToken: data['accessToken'] as String? ?? '',
-        refreshToken: data['refreshToken'] as String? ?? '',
-        expiresAtIso: data['expiresAtIso'] as String? ?? '',
-        accountEmail: data['accountEmail'] as String? ?? '',
-        accountDisplayName: data['accountDisplayName'] as String? ?? '',
+        authState: Office365AuthState(
+          accessToken: data['accessToken'] as String? ?? '',
+          refreshToken: data['refreshToken'] as String? ?? '',
+          expiresAtIso: data['expiresAtIso'] as String? ?? '',
+          accountEmail: data['accountEmail'] as String? ?? '',
+          accountDisplayName: data['accountDisplayName'] as String? ?? '',
+        ),
       );
     } catch (_) {
       return const Office365Settings();
@@ -62,13 +64,7 @@ class Office365SettingsController extends AsyncNotifier<Office365Settings> {
   Future<void> clearAuthState() async {
     final current = state.asData?.value ?? const Office365Settings();
     await updateSettings(
-      current.copyWith(
-        accessToken: '',
-        refreshToken: '',
-        expiresAtIso: '',
-        accountEmail: '',
-        accountDisplayName: '',
-      ),
+      current.copyWith(authState: const Office365AuthState()),
     );
   }
 

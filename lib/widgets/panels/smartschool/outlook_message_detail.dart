@@ -381,206 +381,248 @@ class _OutlookMessageDetailViewState
       future: _load(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
+          return _buildLoadingState();
         }
 
         if (snapshot.hasError) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(
-                'Failed to load Outlook detail: ${snapshot.error}',
-                style: TextStyle(color: colorScheme.error),
-              ),
-            ),
-          );
+          return _buildErrorState(snapshot.error, colorScheme);
         }
 
         final payload = snapshot.data;
         if (payload == null) {
-          return const Center(
-            child: Text('Outlook message not found in local database.'),
-          );
+          return _buildMissingState();
         }
 
-        final row = payload.row;
-        final sender = payload.participants
-            .where((participant) => participant.role == 'sender')
-            .map((participant) => participant.displayNameSnapshot)
-            .cast<String>()
-            .firstWhere(
-              (value) => value.trim().isNotEmpty,
-              orElse: () => widget.header.from,
-            );
-
-        final bodyRaw = row.bodyRaw?.trim() ?? '';
-        final bodyText = row.bodyText?.trim() ?? '';
-        final bodyFormat = (row.bodyFormat ?? '').toLowerCase();
-        final hasHtml = bodyRaw.isNotEmpty && bodyFormat.contains('html');
-        final plainBody = bodyText.isNotEmpty
-            ? bodyText
-            : (bodyRaw.isNotEmpty
-                  ? bodyRaw
-                  : '(No body available yet. Click refresh.)');
-
-        return Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: colorScheme.secondaryContainer,
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Text(
-                      'Outlook',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: colorScheme.onSecondaryContainer,
-                      ),
-                    ),
-                  ),
-                  const Spacer(),
-                  OutlinedButton.icon(
-                    onPressed: _refreshing
-                        ? null
-                        : () => _refreshFromOutlook(row.id),
-                    icon: _refreshing
-                        ? const SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.refresh, size: 16),
-                    label: Text(_refreshing ? 'Refreshing...' : 'Refresh'),
-                  ),
-                  const SizedBox(width: 4),
-                  IconButton(
-                    icon: const Icon(Icons.bug_report_outlined, size: 18),
-                    tooltip: 'Dump debug info to console',
-                    visualDensity: VisualDensity.compact,
-                    onPressed: () => unawaited(_dumpOutlookDebugInfo(payload)),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Text(row.subject, style: Theme.of(context).textTheme.titleLarge),
-              const SizedBox(height: 8),
-              Text(
-                'From: $sender',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Received: ${_formatDate(row.receivedAt)}',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(height: 12),
-              if (payload.attachments.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: payload.attachments.map((attachment) {
-                      final visual = _attachmentVisual(attachment, colorScheme);
-                      final isDownloading = _downloadingAttachmentIds.contains(
-                        attachment.id,
-                      );
-                      final isDownloaded = (attachment.localPath ?? '')
-                          .trim()
-                          .isNotEmpty;
-                      final icon = isDownloading
-                          ? null
-                          : isDownloaded
-                          ? Icons.open_in_new
-                          : Icons.download_outlined;
-
-                      return ActionChip(
-                        onPressed: isDownloading
-                            ? null
-                            : () => _openOrDownloadAttachment(
-                                context,
-                                row.id,
-                                attachment,
-                              ),
-                        avatar: isDownloading
-                            ? const SizedBox(
-                                width: 14,
-                                height: 14,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : Container(
-                                width: 20,
-                                height: 20,
-                                decoration: BoxDecoration(
-                                  color: visual.tint.withValues(alpha: 0.14),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Center(
-                                  child: Icon(
-                                    icon ?? visual.icon,
-                                    size: 14,
-                                    color: visual.tint,
-                                  ),
-                                ),
-                              ),
-                        label: Text(
-                          attachment.filename,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        tooltip: isDownloaded
-                            ? 'Open attachment'
-                            : 'Download attachment',
-                      );
-                    }).toList(),
-                  ),
-                ),
-              Expanded(
-                child: Container(
-                  width: double.infinity,
-                  clipBehavior: Clip.antiAlias,
-                  decoration: BoxDecoration(
-                    border: Border.all(color: colorScheme.outlineVariant),
-                    borderRadius: BorderRadius.circular(8),
-                    color: colorScheme.surface,
-                  ),
-                  child: hasHtml
-                      ? _OutlookHtmlBodyView(html: bodyRaw)
-                      : Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: SingleChildScrollView(
-                            child: SelectableText(
-                              plainBody,
-                              style: const TextStyle(
-                                fontSize: 13,
-                                height: 1.35,
-                              ),
-                            ),
-                          ),
-                        ),
-                ),
-              ),
-            ],
-          ),
-        );
+        return _buildLoadedState(context, payload, colorScheme);
       },
+    );
+  }
+
+  Widget _buildLoadingState() {
+    return const Center(child: CircularProgressIndicator());
+  }
+
+  Widget _buildErrorState(Object? error, ColorScheme colorScheme) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Text(
+          'Failed to load Outlook detail: $error',
+          style: TextStyle(color: colorScheme.error),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMissingState() {
+    return const Center(
+      child: Text('Outlook message not found in local database.'),
+    );
+  }
+
+  Widget _buildLoadedState(
+    BuildContext context,
+    _OutlookDetailPayload payload,
+    ColorScheme colorScheme,
+  ) {
+    final row = payload.row;
+    final body = _messageBody(row);
+
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildToolbar(payload, row.id, colorScheme),
+          const SizedBox(height: 12),
+          Text(row.subject, style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 8),
+          Text(
+            'From: ${_senderName(payload)}',
+            style: TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Received: ${_formatDate(row.receivedAt)}',
+            style: TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 12),
+          if (payload.attachments.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _buildAttachmentWrap(
+                context,
+                payload,
+                row.id,
+                colorScheme,
+              ),
+            ),
+          Expanded(child: _buildBodyPanel(body, colorScheme)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildToolbar(
+    _OutlookDetailPayload payload,
+    int localMessageId,
+    ColorScheme colorScheme,
+  ) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: colorScheme.secondaryContainer,
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Text(
+            'Outlook',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: colorScheme.onSecondaryContainer,
+            ),
+          ),
+        ),
+        const Spacer(),
+        OutlinedButton.icon(
+          onPressed: _refreshing
+              ? null
+              : () => _refreshFromOutlook(localMessageId),
+          icon: _refreshing
+              ? const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.refresh, size: 16),
+          label: Text(_refreshing ? 'Refreshing...' : 'Refresh'),
+        ),
+        const SizedBox(width: 4),
+        IconButton(
+          icon: const Icon(Icons.bug_report_outlined, size: 18),
+          tooltip: 'Dump debug info to console',
+          visualDensity: VisualDensity.compact,
+          onPressed: () => unawaited(_dumpOutlookDebugInfo(payload)),
+        ),
+      ],
+    );
+  }
+
+  String _senderName(_OutlookDetailPayload payload) {
+    return payload.participants
+        .where((participant) => participant.role == 'sender')
+        .map((participant) => participant.displayNameSnapshot)
+        .cast<String>()
+        .firstWhere(
+          (value) => value.trim().isNotEmpty,
+          orElse: () => widget.header.from,
+        );
+  }
+
+  _MessageBodyState _messageBody(Message row) {
+    final bodyRaw = row.bodyRaw?.trim() ?? '';
+    final bodyText = row.bodyText?.trim() ?? '';
+    final bodyFormat = (row.bodyFormat ?? '').toLowerCase();
+    final hasHtml = bodyRaw.isNotEmpty && bodyFormat.contains('html');
+    final plainBody = bodyText.isNotEmpty
+        ? bodyText
+        : (bodyRaw.isNotEmpty
+              ? bodyRaw
+              : '(No body available yet. Click refresh.)');
+
+    return _MessageBodyState(
+      bodyRaw: bodyRaw,
+      plainBody: plainBody,
+      hasHtml: hasHtml,
+    );
+  }
+
+  Widget _buildAttachmentWrap(
+    BuildContext context,
+    _OutlookDetailPayload payload,
+    int localMessageId,
+    ColorScheme colorScheme,
+  ) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: payload.attachments
+          .map(
+            (attachment) => _buildAttachmentChip(
+              context,
+              attachment,
+              localMessageId,
+              colorScheme,
+            ),
+          )
+          .toList(),
+    );
+  }
+
+  Widget _buildAttachmentChip(
+    BuildContext context,
+    MessageAttachment attachment,
+    int localMessageId,
+    ColorScheme colorScheme,
+  ) {
+    final visual = _attachmentVisual(attachment, colorScheme);
+    final isDownloading = _downloadingAttachmentIds.contains(attachment.id);
+    final isDownloaded = (attachment.localPath ?? '').trim().isNotEmpty;
+    final icon = isDownloading
+        ? null
+        : isDownloaded
+        ? Icons.open_in_new
+        : Icons.download_outlined;
+
+    return ActionChip(
+      onPressed: isDownloading
+          ? null
+          : () =>
+                _openOrDownloadAttachment(context, localMessageId, attachment),
+      avatar: isDownloading
+          ? const SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : Container(
+              width: 20,
+              height: 20,
+              decoration: BoxDecoration(
+                color: visual.tint.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Center(
+                child: Icon(icon ?? visual.icon, size: 14, color: visual.tint),
+              ),
+            ),
+      label: Text(attachment.filename, overflow: TextOverflow.ellipsis),
+      tooltip: isDownloaded ? 'Open attachment' : 'Download attachment',
+    );
+  }
+
+  Widget _buildBodyPanel(_MessageBodyState body, ColorScheme colorScheme) {
+    return Container(
+      width: double.infinity,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        border: Border.all(color: colorScheme.outlineVariant),
+        borderRadius: BorderRadius.circular(8),
+        color: colorScheme.surface,
+      ),
+      child: body.hasHtml
+          ? _OutlookHtmlBodyView(html: body.bodyRaw)
+          : Padding(
+              padding: const EdgeInsets.all(12),
+              child: SingleChildScrollView(
+                child: SelectableText(
+                  body.plainBody,
+                  style: const TextStyle(fontSize: 13, height: 1.35),
+                ),
+              ),
+            ),
     );
   }
 
@@ -608,6 +650,18 @@ class _OutlookAttachmentVisual {
 
   final IconData icon;
   final Color tint;
+}
+
+class _MessageBodyState {
+  const _MessageBodyState({
+    required this.bodyRaw,
+    required this.plainBody,
+    required this.hasHtml,
+  });
+
+  final String bodyRaw;
+  final String plainBody;
+  final bool hasHtml;
 }
 
 class _OutlookHtmlBodyView extends StatefulWidget {

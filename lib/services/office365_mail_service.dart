@@ -14,6 +14,9 @@ import '../models/office365_settings.dart';
 import '../providers/database_provider.dart';
 
 const _kOffice365Source = 'outlook';
+const _kMicrosoftLoginHost = 'login.microsoftonline.com';
+const _kOutlookBodyContentTypeHeader = 'outlook.body-content-type="html"';
+const _kOutlookMessageNotFound = 'Outlook message not found in local database.';
 
 class OutlookLatestMessage {
   const OutlookLatestMessage({
@@ -76,6 +79,45 @@ class OutlookSyncResult {
   final int scannedCount;
   final int newCount;
   final int removedCount;
+}
+
+class _InboxDeltaStart {
+  const _InboxDeltaStart({required this.nextUrl, required this.isFullRefresh});
+
+  final String nextUrl;
+  final bool isFullRefresh;
+}
+
+class _InboxSyncProgress {
+  _InboxSyncProgress({required bool isFullRefresh})
+    : scannedExternalIds = isFullRefresh ? <String>{} : null;
+
+  final Set<String>? scannedExternalIds;
+  int newCount = 0;
+  int scannedCount = 0;
+  int removedCount = 0;
+  DateTime? latestReceivedAt;
+  String? latestExternalId;
+  String? deltaCursor;
+
+  void trackMessage(OutlookLatestMessage message) {
+    scannedCount++;
+    scannedExternalIds?.add(message.id);
+
+    if (latestReceivedAt == null ||
+        message.receivedAt.isAfter(latestReceivedAt!)) {
+      latestReceivedAt = message.receivedAt;
+      latestExternalId = message.id;
+    }
+  }
+
+  OutlookSyncResult toResult() {
+    return OutlookSyncResult(
+      scannedCount: scannedCount,
+      newCount: newCount,
+      removedCount: removedCount,
+    );
+  }
 }
 
 class Office365MailService {
@@ -144,7 +186,7 @@ class Office365MailService {
     );
 
     final authUri = Uri.https(
-      'login.microsoftonline.com',
+      _kMicrosoftLoginHost,
       '/${settings.tenantId.trim()}/oauth2/v2.0/authorize',
       {
         'client_id': settings.clientId.trim(),
@@ -264,109 +306,30 @@ class Office365MailService {
       final token = await _ensureValidAccessToken();
       final db = ref.read(appDatabaseProvider);
 
-      await db.syncStateDao.markAttempt(
-        source: _kOffice365Source,
-        scope: 'inbox',
-      );
+      await _markInboxSyncAttempt(db);
       final currentState = await db.syncStateDao.getState(
         source: _kOffice365Source,
         scope: 'inbox',
       );
-
-      String? nextUrl = currentState?.remoteCursor?.trim();
-      final isFullRefresh = nextUrl == null || nextUrl.isEmpty;
-      if (isFullRefresh) {
-        nextUrl = _deltaSeedUrl();
-      }
-
-      var newCount = 0;
-      var scannedCount = 0;
-      var removedCount = 0;
-      final scannedExternalIds = isFullRefresh ? <String>{} : null;
-      DateTime? latestReceivedAt;
-      String? latestExternalId;
-      String? deltaCursor;
-
-      while (nextUrl != null && nextUrl.isNotEmpty) {
-        final payload = await _getJson(
-          Uri.parse(nextUrl),
-          headers: {
-            'Authorization': 'Bearer $token',
-            'Prefer': 'outlook.body-content-type="html"',
-          },
-        );
-
-        final values = payload['value'];
-        if (values is List) {
-          for (final entry in values) {
-            if (entry is! Map<String, dynamic>) continue;
-
-            if (entry.containsKey('@removed')) {
-              final removedId = entry['id'] as String?;
-              if (removedId != null && removedId.trim().isNotEmpty) {
-                await _markMessageDeletedByExternalId(removedId);
-                removedCount++;
-              }
-              continue;
-            }
-
-            final parsed = _parseLatestMessage(entry);
-            if (parsed == null) continue;
-            scannedCount++;
-            scannedExternalIds?.add(parsed.id);
-
-            final existed = await _messageExists(externalId: parsed.id);
-            await _persistInboxMessage(parsed);
-            if (!existed) {
-              newCount++;
-            }
-
-            if (latestReceivedAt == null ||
-                parsed.receivedAt.isAfter(latestReceivedAt)) {
-              latestReceivedAt = parsed.receivedAt;
-              latestExternalId = parsed.id;
-            }
-          }
-        }
-
-        final nextLink = payload['@odata.nextLink'] as String?;
-        final deltaLink = payload['@odata.deltaLink'] as String?;
-        if (deltaLink != null && deltaLink.trim().isNotEmpty) {
-          deltaCursor = deltaLink;
-        }
-
-        if (nextLink != null && nextLink.trim().isNotEmpty) {
-          nextUrl = nextLink;
-          continue;
-        }
-
-        nextUrl = null;
-      }
-
-      // On a full refresh there are no @removed entries from the delta API, so
-      // reconcile manually: delete any local inbox rows not seen in this scan.
-      if (isFullRefresh && scannedExternalIds != null) {
-        final staleCount = await db.messagesDao.deleteStaleMessages(
-          source: _kOffice365Source,
-          mailbox: 'inbox',
-          activeExternalIds: scannedExternalIds,
-        );
-        removedCount += staleCount;
-      }
-
-      await db.syncStateDao.markSuccess(
-        source: _kOffice365Source,
-        scope: 'inbox',
-        remoteCursor: deltaCursor ?? currentState?.remoteCursor,
-        highWaterExternalId: latestExternalId,
-        highWaterReceivedAt: latestReceivedAt,
+      final syncStart = _buildInboxDeltaStart(currentState);
+      final progress = await _syncInboxDeltaPages(
+        token: token,
+        nextUrl: syncStart.nextUrl,
+        isFullRefresh: syncStart.isFullRefresh,
       );
 
-      return OutlookSyncResult(
-        scannedCount: scannedCount,
-        newCount: newCount,
-        removedCount: removedCount,
+      progress.removedCount += await _reconcileFullRefreshInbox(
+        db: db,
+        isFullRefresh: syncStart.isFullRefresh,
+        scannedExternalIds: progress.scannedExternalIds,
       );
+      await _markInboxSyncSuccess(
+        db: db,
+        currentState: currentState,
+        progress: progress,
+      );
+
+      return progress.toResult();
     } catch (error) {
       if (silentWhenNotReady) {
         return const OutlookSyncResult(
@@ -386,6 +349,141 @@ class Office365MailService {
     }
   }
 
+  Future<void> _markInboxSyncAttempt(AppDatabase db) {
+    return db.syncStateDao.markAttempt(
+      source: _kOffice365Source,
+      scope: 'inbox',
+    );
+  }
+
+  _InboxDeltaStart _buildInboxDeltaStart(SyncStateData? currentState) {
+    final remoteCursor = currentState?.remoteCursor?.trim();
+    final isFullRefresh = remoteCursor == null || remoteCursor.isEmpty;
+    return _InboxDeltaStart(
+      nextUrl: isFullRefresh ? _deltaSeedUrl() : remoteCursor,
+      isFullRefresh: isFullRefresh,
+    );
+  }
+
+  Future<_InboxSyncProgress> _syncInboxDeltaPages({
+    required String token,
+    required String nextUrl,
+    required bool isFullRefresh,
+  }) async {
+    final progress = _InboxSyncProgress(isFullRefresh: isFullRefresh);
+    var currentUrl = nextUrl;
+
+    while (currentUrl.isNotEmpty) {
+      final payload = await _fetchInboxDeltaPage(
+        token: token,
+        nextUrl: currentUrl,
+      );
+      await _processInboxDeltaPayload(payload, progress);
+      currentUrl = _nextInboxDeltaUrl(payload);
+    }
+
+    return progress;
+  }
+
+  Future<Map<String, dynamic>> _fetchInboxDeltaPage({
+    required String token,
+    required String nextUrl,
+  }) {
+    return _getJson(
+      Uri.parse(nextUrl),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Prefer': _kOutlookBodyContentTypeHeader,
+      },
+    );
+  }
+
+  Future<void> _processInboxDeltaPayload(
+    Map<String, dynamic> payload,
+    _InboxSyncProgress progress,
+  ) async {
+    final values = payload['value'];
+    if (values is List) {
+      for (final entry in values.whereType<Map<String, dynamic>>()) {
+        await _processInboxDeltaEntry(entry, progress);
+      }
+    }
+
+    final deltaLink = payload['@odata.deltaLink'] as String?;
+    if (deltaLink != null && deltaLink.trim().isNotEmpty) {
+      progress.deltaCursor = deltaLink;
+    }
+  }
+
+  Future<void> _processInboxDeltaEntry(
+    Map<String, dynamic> entry,
+    _InboxSyncProgress progress,
+  ) async {
+    final removedId = _removedInboxEntryId(entry);
+    if (removedId != null) {
+      await _markMessageDeletedByExternalId(removedId);
+      progress.removedCount++;
+      return;
+    }
+
+    final parsed = _parseLatestMessage(entry);
+    if (parsed == null) return;
+
+    progress.trackMessage(parsed);
+    final existed = await _messageExists(externalId: parsed.id);
+    await _persistInboxMessage(parsed);
+    if (!existed) {
+      progress.newCount++;
+    }
+  }
+
+  String? _removedInboxEntryId(Map<String, dynamic> entry) {
+    if (!entry.containsKey('@removed')) {
+      return null;
+    }
+
+    final removedId = (entry['id'] as String?)?.trim();
+    if (removedId == null || removedId.isEmpty) {
+      return null;
+    }
+    return removedId;
+  }
+
+  String _nextInboxDeltaUrl(Map<String, dynamic> payload) {
+    final nextLink = (payload['@odata.nextLink'] as String?)?.trim();
+    return nextLink == null || nextLink.isEmpty ? '' : nextLink;
+  }
+
+  Future<int> _reconcileFullRefreshInbox({
+    required AppDatabase db,
+    required bool isFullRefresh,
+    required Set<String>? scannedExternalIds,
+  }) async {
+    if (!isFullRefresh || scannedExternalIds == null) {
+      return 0;
+    }
+
+    return db.messagesDao.deleteStaleMessages(
+      source: _kOffice365Source,
+      mailbox: 'inbox',
+      activeExternalIds: scannedExternalIds,
+    );
+  }
+
+  Future<void> _markInboxSyncSuccess({
+    required AppDatabase db,
+    required SyncStateData? currentState,
+    required _InboxSyncProgress progress,
+  }) {
+    return db.syncStateDao.markSuccess(
+      source: _kOffice365Source,
+      scope: 'inbox',
+      remoteCursor: progress.deltaCursor ?? currentState?.remoteCursor,
+      highWaterExternalId: progress.latestExternalId,
+      highWaterReceivedAt: progress.latestReceivedAt,
+    );
+  }
+
   Future<void> disconnect() async {
     await ref.read(office365SettingsProvider.notifier).clearAuthState();
     ref
@@ -397,7 +495,7 @@ class Office365MailService {
     final db = ref.read(appDatabaseProvider);
     final local = await db.messagesDao.getMessageById(localMessageId);
     if (local == null || local.source != _kOffice365Source) {
-      throw StateError('Outlook message not found in local database.');
+      throw StateError(_kOutlookMessageNotFound);
     }
 
     final token = await _ensureValidAccessToken();
@@ -412,7 +510,7 @@ class Office365MailService {
       uri,
       headers: {
         'Authorization': 'Bearer $token',
-        'Prefer': 'outlook.body-content-type="html"',
+        'Prefer': _kOutlookBodyContentTypeHeader,
       },
     );
 
@@ -499,7 +597,7 @@ class Office365MailService {
     final db = ref.read(appDatabaseProvider);
     final local = await db.messagesDao.getMessageById(localMessageId);
     if (local == null || local.source != _kOffice365Source) {
-      throw StateError('Outlook message not found in local database.');
+      throw StateError(_kOutlookMessageNotFound);
     }
 
     if (attachment.localPath != null &&
@@ -589,7 +687,7 @@ class Office365MailService {
     final db = ref.read(appDatabaseProvider);
     final local = await db.messagesDao.getMessageById(localMessageId);
     if (local == null || local.source != _kOffice365Source) {
-      throw StateError('Outlook message not found in local database.');
+      throw StateError(_kOutlookMessageNotFound);
     }
     return local;
   }
@@ -717,7 +815,7 @@ class Office365MailService {
       uri,
       headers: {
         'Authorization': 'Bearer $token',
-        'Prefer': 'outlook.body-content-type="html"',
+        'Prefer': _kOutlookBodyContentTypeHeader,
       },
     );
   }
@@ -872,7 +970,7 @@ class Office365MailService {
   }) {
     return _postForm(
       Uri.https(
-        'login.microsoftonline.com',
+        _kMicrosoftLoginHost,
         '/${settings.tenantId.trim()}/oauth2/v2.0/token',
       ),
       body: {
@@ -892,7 +990,7 @@ class Office365MailService {
   }) {
     return _postForm(
       Uri.https(
-        'login.microsoftonline.com',
+        _kMicrosoftLoginHost,
         '/${settings.tenantId.trim()}/oauth2/v2.0/token',
       ),
       body: {
@@ -933,15 +1031,17 @@ class Office365MailService {
         .read(office365SettingsProvider.notifier)
         .updateSettings(
           settings.copyWith(
-            accessToken: accessToken,
-            refreshToken: refreshToken.isEmpty
-                ? settings.refreshToken
-                : refreshToken,
-            expiresAtIso: DateTime.now()
-                .add(Duration(seconds: expiresIn))
-                .toIso8601String(),
-            accountEmail: accountEmail,
-            accountDisplayName: accountDisplayName,
+            authState: settings.authState.copyWith(
+              accessToken: accessToken,
+              refreshToken: refreshToken.isEmpty
+                  ? settings.refreshToken
+                  : refreshToken,
+              expiresAtIso: DateTime.now()
+                  .add(Duration(seconds: expiresIn))
+                  .toIso8601String(),
+              accountEmail: accountEmail,
+              accountDisplayName: accountDisplayName,
+            ),
           ),
         );
   }

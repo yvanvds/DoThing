@@ -236,13 +236,7 @@ class _Office365Form extends StatelessWidget {
             borderRadius: BorderRadius.circular(8),
           ),
           child: Text(
-            connected
-                ? 'Connected as ${settings.accountDisplayName.isNotEmpty
-                      ? settings.accountDisplayName
-                      : settings.accountEmail.isNotEmpty
-                      ? settings.accountEmail
-                      : 'unknown account'}'
-                : 'Not connected',
+            _connectionText(),
             style: TextStyle(
               fontSize: 12,
               color: connected
@@ -260,67 +254,83 @@ class _Office365Form extends StatelessWidget {
             color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.35),
             borderRadius: BorderRadius.circular(8),
           ),
-          child: syncStateAsync.when(
-            loading: () => Text(
-              'Sync status: loading...',
-              style: TextStyle(
-                fontSize: 12,
-                color: colorScheme.onSurfaceVariant,
+          child: _buildSyncStatus(context, colorScheme),
+        ),
+      ],
+    );
+  }
+
+  String _connectionText() {
+    if (!settings.hasToken) {
+      return 'Not connected';
+    }
+
+    final accountLabel = _accountLabel();
+    return 'Connected as $accountLabel';
+  }
+
+  String _accountLabel() {
+    if (settings.accountDisplayName.isNotEmpty) {
+      return settings.accountDisplayName;
+    }
+    if (settings.accountEmail.isNotEmpty) {
+      return settings.accountEmail;
+    }
+    return 'unknown account';
+  }
+
+  Widget _buildSyncStatus(BuildContext context, ColorScheme colorScheme) {
+    return syncStateAsync.when(
+      loading: () => Text(
+        'Sync status: loading...',
+        style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+      ),
+      error: (error, _) => Text(
+        'Sync status unavailable: $error',
+        style: TextStyle(fontSize: 12, color: colorScheme.error),
+      ),
+      data: (syncState) => _buildSyncStatusContent(syncState, colorScheme),
+    );
+  }
+
+  Widget _buildSyncStatusContent(
+    SyncStateData? syncState,
+    ColorScheme colorScheme,
+  ) {
+    if (syncState == null || syncState.lastSuccessAt == null) {
+      return Text(
+        'Last Outlook sync: not yet completed',
+        style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+      );
+    }
+
+    final successText = _formatDateTime(syncState.lastSuccessAt!);
+    final hasErrorText = (syncState.lastError ?? '').trim().isNotEmpty;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Last Outlook sync: $successText',
+          style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+        ),
+        if (syncState.failureCount > 0) ...[
+          const SizedBox(height: 4),
+          Text(
+            'Recent failures: ${syncState.failureCount}',
+            style: TextStyle(fontSize: 12, color: colorScheme.error),
+          ),
+          if (hasErrorText)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                syncState.lastError!,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 11, color: colorScheme.error),
               ),
             ),
-            error: (error, _) => Text(
-              'Sync status unavailable: $error',
-              style: TextStyle(fontSize: 12, color: colorScheme.error),
-            ),
-            data: (syncState) {
-              if (syncState == null || syncState.lastSuccessAt == null) {
-                return Text(
-                  'Last Outlook sync: not yet completed',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                );
-              }
-
-              final successText = _formatDateTime(syncState.lastSuccessAt!);
-              final hasFailure = syncState.failureCount > 0;
-
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Last Outlook sync: $successText',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  if (hasFailure) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      'Recent failures: ${syncState.failureCount}',
-                      style: TextStyle(fontSize: 12, color: colorScheme.error),
-                    ),
-                    if ((syncState.lastError ?? '').trim().isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 2),
-                        child: Text(
-                          syncState.lastError!,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: colorScheme.error,
-                          ),
-                        ),
-                      ),
-                  ],
-                ],
-              );
-            },
-          ),
-        ),
+        ],
       ],
     );
   }

@@ -25,6 +25,7 @@ enum SmartschoolConnectionState { disconnected, initializing, connected }
 class SmartschoolAuthController
     extends AsyncNotifier<SmartschoolConnectionState> {
   SmartschoolBridge? _bridge;
+  int _loginAttemptCounter = 0;
 
   @override
   Future<SmartschoolConnectionState> build() async =>
@@ -53,26 +54,69 @@ class SmartschoolAuthController
       return;
     }
 
+    final existingBridge = _bridge;
+    if (existingBridge != null) {
+      status.add(
+        StatusEntryType.info,
+        'Checking existing Smartschool session…',
+      );
+      final stillAuthenticated = await existingBridge.ping();
+      if (stillAuthenticated) {
+        state = const AsyncData(SmartschoolConnectionState.connected);
+        status.add(
+          StatusEntryType.info,
+          'Reused existing Smartschool session.',
+        );
+        return;
+      }
+
+      status.add(
+        StatusEntryType.warning,
+        'Stored Smartschool session expired. Performing a fresh login…',
+      );
+      existingBridge.dispose();
+      _bridge = null;
+    } else {
+      status.add(
+        StatusEntryType.info,
+        'No active Smartschool session. Performing a fresh login…',
+      );
+    }
+
+    final attemptNumber = ++_loginAttemptCounter;
+    final attemptStartedAt = DateTime.now();
+
     state = const AsyncData(SmartschoolConnectionState.initializing);
 
     state = await AsyncValue.guard(() async {
       final normalizedUrl = _normalizeMainUrl(settings.url);
 
-      status.add(StatusEntryType.info, 'Connecting to Smartschool…');
+      status.add(
+        StatusEntryType.info,
+        'Connecting to Smartschool at $normalizedUrl (attempt #$attemptNumber)…',
+      );
       _bridge = await SmartschoolBridge.connect(
         username: settings.username,
         password: settings.password,
         mainUrl: normalizedUrl,
         mfa: settings.mfaSecret,
       );
-      status.add(StatusEntryType.success, 'Logged in to Smartschool.');
+      final elapsed = DateTime.now().difference(attemptStartedAt);
+      status.add(
+        StatusEntryType.success,
+        'Logged in to Smartschool on attempt #$attemptNumber after ${elapsed.inMilliseconds} ms.',
+      );
 
       return SmartschoolConnectionState.connected;
     });
 
     if (state is AsyncError) {
       final asyncError = state as AsyncError<SmartschoolConnectionState>;
-      status.add(StatusEntryType.error, _friendlyAuthError(asyncError.error));
+      final elapsed = DateTime.now().difference(attemptStartedAt);
+      status.add(
+        StatusEntryType.error,
+        '${_friendlyAuthError(asyncError.error)} (attempt #$attemptNumber, ${elapsed.inMilliseconds} ms)',
+      );
       state = const AsyncData(SmartschoolConnectionState.disconnected);
     }
   }

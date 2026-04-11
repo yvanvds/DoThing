@@ -270,246 +270,283 @@ class _SmartschoolMessageListState
   }
 
   Future<void> _archiveAllForContact(SmartschoolContactInbox contact) async {
-    if (_bulkBusyContacts.contains(contact.contactId)) return;
-
-    setState(() => _bulkBusyContacts.add(contact.contactId));
-
-    final status = ref.read(statusProvider.notifier);
-    final total = contact.items.length;
-    var successCount = 0;
-    Object? firstError;
-    var processedCount = 0;
-    _setBulkProgress(
-      contact.contactId,
-      _BulkProgress(processed: 0, total: total, actionLabel: 'Archiving'),
+    await _runBulkContactAction(
+      contact: contact,
+      actionLabel: 'Archiving',
+      progressLabel: 'Archive',
+      successVerb: 'Archived',
+      perform: (status, total, state) async {
+        await _archiveSmartschoolMessages(
+          contact: contact,
+          status: status,
+          total: total,
+          state: state,
+        );
+        await _archiveOutlookMessages(
+          contact: contact,
+          status: status,
+          total: total,
+          state: state,
+        );
+      },
     );
-
-    status.add(
-      StatusEntryType.info,
-      'Archiving $total message${total == 1 ? '' : 's'} for ${contact.displayName}...',
-    );
-
-    try {
-      final smartschoolIds = contact.items
-          .map((item) => item.messageHeader)
-          .where((header) => header.source == 'smartschool')
-          .map((header) => header.id)
-          .toList();
-
-      if (smartschoolIds.isNotEmpty) {
-        status.add(
-          StatusEntryType.info,
-          'Archiving ${smartschoolIds.length} Smartschool message${smartschoolIds.length == 1 ? '' : 's'}...',
-        );
-        try {
-          await ref
-              .read(smartschoolMessagesProvider.notifier)
-              .archive(smartschoolIds);
-          successCount += smartschoolIds.length;
-          processedCount += smartschoolIds.length;
-          _setBulkProgress(
-            contact.contactId,
-            _BulkProgress(
-              processed: processedCount,
-              total: total,
-              actionLabel: 'Archiving',
-            ),
-          );
-          status.add(
-            StatusEntryType.info,
-            'Archive progress (${contact.displayName}): $processedCount/$total',
-          );
-        } catch (error) {
-          firstError ??= error;
-          processedCount += smartschoolIds.length;
-          _setBulkProgress(
-            contact.contactId,
-            _BulkProgress(
-              processed: processedCount,
-              total: total,
-              actionLabel: 'Archiving',
-            ),
-          );
-          status.add(
-            StatusEntryType.warning,
-            'Failed archiving Smartschool batch for ${contact.displayName}: $error',
-          );
-        }
-      }
-
-      final outlookHeaders = contact.items
-          .map((item) => item.messageHeader)
-          .where((header) => header.source == 'outlook')
-          .toList();
-
-      for (final item in contact.items) {
-        final header = item.messageHeader;
-        if (header.source != 'outlook') continue;
-
-        try {
-          await ref
-              .read(office365MailServiceProvider)
-              .archiveMessage(header.id);
-          successCount++;
-        } catch (error) {
-          firstError ??= error;
-          status.add(
-            StatusEntryType.warning,
-            'Failed archiving Outlook message ${header.id} for ${contact.displayName}: $error',
-          );
-        }
-
-        processedCount++;
-        _setBulkProgress(
-          contact.contactId,
-          _BulkProgress(
-            processed: processedCount,
-            total: total,
-            actionLabel: 'Archiving',
-          ),
-        );
-        if (outlookHeaders.length <= 5 ||
-            processedCount == total ||
-            processedCount % 5 == 0) {
-          status.add(
-            StatusEntryType.info,
-            'Archive progress (${contact.displayName}): $processedCount/$total',
-          );
-        }
-      }
-
-      await _refresh(background: true);
-
-      status.add(
-        firstError == null ? StatusEntryType.success : StatusEntryType.warning,
-        firstError == null
-            ? 'Archive completed for ${contact.displayName}: $successCount/$total succeeded.'
-            : 'Archive completed for ${contact.displayName}: $successCount/$total succeeded (errors occurred).',
-      );
-
-      if (!mounted) return;
-      if (firstError == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Archived $successCount message${successCount == 1 ? '' : 's'} from ${contact.displayName}.',
-            ),
-          ),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Archived $successCount of ${contact.items.length} messages. First error: $firstError',
-            ),
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _bulkBusyContacts.remove(contact.contactId);
-          _bulkProgressByContact.remove(contact.contactId);
-        });
-      }
-    }
   }
 
   Future<void> _deleteAllForContact(SmartschoolContactInbox contact) async {
+    await _runBulkContactAction(
+      contact: contact,
+      actionLabel: 'Deleting',
+      progressLabel: 'Delete',
+      successVerb: 'Deleted',
+      perform: (status, total, state) async {
+        await _deleteMessagesForContact(
+          contact: contact,
+          status: status,
+          total: total,
+          state: state,
+        );
+      },
+    );
+  }
+
+  Future<void> _runBulkContactAction({
+    required SmartschoolContactInbox contact,
+    required String actionLabel,
+    required String progressLabel,
+    required String successVerb,
+    required Future<void> Function(
+      StatusController status,
+      int total,
+      _BulkActionState state,
+    )
+    perform,
+  }) async {
     if (_bulkBusyContacts.contains(contact.contactId)) return;
 
     setState(() => _bulkBusyContacts.add(contact.contactId));
 
     final status = ref.read(statusProvider.notifier);
     final total = contact.items.length;
-    var successCount = 0;
-    Object? firstError;
-    var processedCount = 0;
+    final state = _BulkActionState();
+
     _setBulkProgress(
       contact.contactId,
-      _BulkProgress(processed: 0, total: total, actionLabel: 'Deleting'),
+      _BulkProgress(processed: 0, total: total, actionLabel: actionLabel),
     );
-
     status.add(
       StatusEntryType.info,
-      'Deleting $total message${total == 1 ? '' : 's'} for ${contact.displayName}...',
+      '$actionLabel $total message${total == 1 ? '' : 's'} for ${contact.displayName}...',
     );
 
     try {
-      for (final item in contact.items) {
-        final header = item.messageHeader;
-        try {
-          if (header.source == 'smartschool') {
-            await ref
-                .read(smartschoolMessagesProvider.notifier)
-                .trash(header.id);
-            successCount++;
-          } else if (header.source == 'outlook') {
-            await ref
-                .read(office365MailServiceProvider)
-                .deleteMessage(header.id);
-            successCount++;
-          }
-        } catch (error) {
-          firstError ??= error;
-          status.add(
-            StatusEntryType.warning,
-            'Failed deleting ${header.source} message ${header.id} for ${contact.displayName}: $error',
-          );
-        }
-
-        processedCount++;
-        _setBulkProgress(
-          contact.contactId,
-          _BulkProgress(
-            processed: processedCount,
-            total: total,
-            actionLabel: 'Deleting',
-          ),
-        );
-        if (total <= 5 || processedCount == total || processedCount % 5 == 0) {
-          status.add(
-            StatusEntryType.info,
-            'Delete progress (${contact.displayName}): $processedCount/$total',
-          );
-        }
-      }
-
+      await perform(status, total, state);
       await _refresh(background: true);
-
-      status.add(
-        firstError == null ? StatusEntryType.success : StatusEntryType.warning,
-        firstError == null
-            ? 'Delete completed for ${contact.displayName}: $successCount/$total succeeded.'
-            : 'Delete completed for ${contact.displayName}: $successCount/$total succeeded (errors occurred).',
+      _reportBulkActionCompletion(
+        contact: contact,
+        total: total,
+        state: state,
+        progressLabel: progressLabel,
+        successVerb: successVerb,
       );
-
-      if (!mounted) return;
-      if (firstError == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Deleted $successCount message${successCount == 1 ? '' : 's'} from ${contact.displayName}.',
-            ),
-          ),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Deleted $successCount of ${contact.items.length} messages. First error: $firstError',
-            ),
-          ),
-        );
-      }
     } finally {
-      if (mounted) {
-        setState(() {
-          _bulkBusyContacts.remove(contact.contactId);
-          _bulkProgressByContact.remove(contact.contactId);
-        });
-      }
+      _clearBulkAction(contact.contactId);
     }
+  }
+
+  Future<void> _archiveSmartschoolMessages({
+    required SmartschoolContactInbox contact,
+    required StatusController status,
+    required int total,
+    required _BulkActionState state,
+  }) async {
+    final smartschoolIds = contact.items
+        .map((item) => item.messageHeader)
+        .where((header) => header.source == 'smartschool')
+        .map((header) => header.id)
+        .toList();
+    if (smartschoolIds.isEmpty) {
+      return;
+    }
+
+    status.add(
+      StatusEntryType.info,
+      'Archiving ${smartschoolIds.length} Smartschool message${smartschoolIds.length == 1 ? '' : 's'}...',
+    );
+
+    try {
+      await ref
+          .read(smartschoolMessagesProvider.notifier)
+          .archive(smartschoolIds);
+      state.successCount += smartschoolIds.length;
+    } catch (error) {
+      state.recordError(error);
+      status.add(
+        StatusEntryType.warning,
+        'Failed archiving Smartschool batch for ${contact.displayName}: $error',
+      );
+    } finally {
+      state.processedCount += smartschoolIds.length;
+      _updateBulkActionProgress(
+        contact: contact,
+        total: total,
+        state: state,
+        actionLabel: 'Archiving',
+        progressLabel: 'Archive',
+        shouldLog: true,
+        status: status,
+      );
+    }
+  }
+
+  Future<void> _archiveOutlookMessages({
+    required SmartschoolContactInbox contact,
+    required StatusController status,
+    required int total,
+    required _BulkActionState state,
+  }) async {
+    final outlookHeaders = contact.items
+        .map((item) => item.messageHeader)
+        .where((header) => header.source == 'outlook')
+        .toList();
+
+    for (final header in outlookHeaders) {
+      try {
+        await ref.read(office365MailServiceProvider).archiveMessage(header.id);
+        state.successCount++;
+      } catch (error) {
+        state.recordError(error);
+        status.add(
+          StatusEntryType.warning,
+          'Failed archiving Outlook message ${header.id} for ${contact.displayName}: $error',
+        );
+      }
+
+      state.processedCount++;
+      _updateBulkActionProgress(
+        contact: contact,
+        total: total,
+        state: state,
+        actionLabel: 'Archiving',
+        progressLabel: 'Archive',
+        shouldLog:
+            outlookHeaders.length <= 5 ||
+            state.processedCount == total ||
+            state.processedCount % 5 == 0,
+        status: status,
+      );
+    }
+  }
+
+  Future<void> _deleteMessagesForContact({
+    required SmartschoolContactInbox contact,
+    required StatusController status,
+    required int total,
+    required _BulkActionState state,
+  }) async {
+    for (final item in contact.items) {
+      final header = item.messageHeader;
+      try {
+        await _deleteMessageHeader(header);
+        state.successCount++;
+      } catch (error) {
+        state.recordError(error);
+        status.add(
+          StatusEntryType.warning,
+          'Failed deleting ${header.source} message ${header.id} for ${contact.displayName}: $error',
+        );
+      }
+
+      state.processedCount++;
+      _updateBulkActionProgress(
+        contact: contact,
+        total: total,
+        state: state,
+        actionLabel: 'Deleting',
+        progressLabel: 'Delete',
+        shouldLog:
+            total <= 5 ||
+            state.processedCount == total ||
+            state.processedCount % 5 == 0,
+        status: status,
+      );
+    }
+  }
+
+  Future<void> _deleteMessageHeader(SmartschoolMessageHeader header) async {
+    if (header.source == 'smartschool') {
+      await ref.read(smartschoolMessagesProvider.notifier).trash(header.id);
+      return;
+    }
+    if (header.source == 'outlook') {
+      await ref.read(office365MailServiceProvider).deleteMessage(header.id);
+    }
+  }
+
+  void _updateBulkActionProgress({
+    required SmartschoolContactInbox contact,
+    required int total,
+    required _BulkActionState state,
+    required String actionLabel,
+    required String progressLabel,
+    required bool shouldLog,
+    required StatusController status,
+  }) {
+    _setBulkProgress(
+      contact.contactId,
+      _BulkProgress(
+        processed: state.processedCount,
+        total: total,
+        actionLabel: actionLabel,
+      ),
+    );
+
+    if (!shouldLog) {
+      return;
+    }
+
+    status.add(
+      StatusEntryType.info,
+      '$progressLabel progress (${contact.displayName}): ${state.processedCount}/$total',
+    );
+  }
+
+  void _reportBulkActionCompletion({
+    required SmartschoolContactInbox contact,
+    required int total,
+    required _BulkActionState state,
+    required String progressLabel,
+    required String successVerb,
+  }) {
+    final status = ref.read(statusProvider.notifier);
+    final statusType = state.firstError == null
+        ? StatusEntryType.success
+        : StatusEntryType.warning;
+    final completionText = state.firstError == null
+        ? '$progressLabel completed for ${contact.displayName}: ${state.successCount}/$total succeeded.'
+        : '$progressLabel completed for ${contact.displayName}: ${state.successCount}/$total succeeded (errors occurred).';
+
+    status.add(statusType, completionText);
+    if (!mounted) {
+      return;
+    }
+
+    final snackBarText = state.firstError == null
+        ? '$successVerb ${state.successCount} message${state.successCount == 1 ? '' : 's'} from ${contact.displayName}.'
+        : '$successVerb ${state.successCount} of ${contact.items.length} messages. First error: ${state.firstError}';
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(snackBarText)));
+  }
+
+  void _clearBulkAction(int contactId) {
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _bulkBusyContacts.remove(contactId);
+      _bulkProgressByContact.remove(contactId);
+    });
   }
 
   void _setBulkProgress(int contactId, _BulkProgress progress) {
@@ -932,4 +969,14 @@ class _BulkProgress {
   final int processed;
   final int total;
   final String actionLabel;
+}
+
+class _BulkActionState {
+  int successCount = 0;
+  int processedCount = 0;
+  Object? firstError;
+
+  void recordError(Object error) {
+    firstError ??= error;
+  }
 }
