@@ -378,7 +378,10 @@ class SmartschoolSyncRepository {
     return [];
   }
 
-  String? _resolveDetailSenderAvatar(Message existing, SmartschoolMessageDetail d) {
+  String? _resolveDetailSenderAvatar(
+    Message existing,
+    SmartschoolMessageDetail d,
+  ) {
     final fromHeader = _extractHeaderAvatarUrl(existing.rawHeaderJson);
     if (_isValidAvatarUrl(fromHeader)) return fromHeader;
     if (_isValidAvatarUrl(d.senderPicture)) return d.senderPicture;

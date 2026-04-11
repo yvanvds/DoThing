@@ -126,3 +126,4 @@ python_test/
 # Node.js / NPM / Lefthook
 node_modules/
 package-lock.json
+pubspec_overrides.yaml

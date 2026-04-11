@@ -91,8 +91,9 @@ class ContactsDao extends DatabaseAccessor<AppDatabase>
         ),
       );
       if (_isValidAvatarUrl(avatarUrl)) {
-        await (update(contacts)..where((t) => t.id.equals(existing.contactId)))
-            .write(
+        await (update(
+          contacts,
+        )..where((t) => t.id.equals(existing.contactId))).write(
           ContactsCompanion(
             primaryAvatarUrl: Value(avatarUrl),
             updatedAt: Value(DateTime.now()),
