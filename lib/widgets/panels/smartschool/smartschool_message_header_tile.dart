@@ -282,7 +282,7 @@ class _SmartschoolMessageHeaderTileState
   Future<void> _handleOpenMessage() async {
     final currentHeader = widget.header;
 
-    if (!_isSmartschoolSource) {
+    if (!_isSmartschoolSource && !_isOutlookSource) {
       ref
           .read(smartschoolSelectedMessageProvider.notifier)
           .select(currentHeader);
@@ -302,12 +302,23 @@ class _SmartschoolMessageHeaderTileState
     ref.read(smartschoolSelectedMessageProvider.notifier).select(readHeader);
 
     try {
-      await ref
-          .read(smartschoolMessagesProvider.notifier)
-          .markRead(currentHeader.id);
-      await ref
-          .read(smartschoolInboxProvider.notifier)
-          .refreshInboxAndGetHeaders(showLoading: false);
+      if (_isSmartschoolSource) {
+        await ref
+            .read(smartschoolMessagesProvider.notifier)
+            .markRead(currentHeader.id);
+        await ref
+            .read(smartschoolInboxProvider.notifier)
+            .refreshInboxAndGetHeaders(showLoading: false);
+      } else {
+        await ref
+            .read(office365MailServiceProvider)
+            .markMessageRead(currentHeader.id);
+        await ref
+            .read(smartschoolInboxProvider.notifier)
+            .refreshUnreadFromLocal(showLoading: false);
+      }
+
+      if (mounted) setState(() => _isHovered = false);
     } catch (e) {
       final unreadHeader = _copyHeaderWithUnread(currentHeader, unread: true);
       widget.onHeaderUpdated(unreadHeader);

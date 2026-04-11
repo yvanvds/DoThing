@@ -9,5 +9,5 @@
     "sonarlint.connectedMode.project": {
         "connectionId": "yvanvds",
         "projectKey": "yvanvds_DoThing"
-    }
+    },
 }

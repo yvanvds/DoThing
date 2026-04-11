@@ -8,6 +8,7 @@
 *.iml
 .buildlog/
 .history
+credentials.yml
 
 
 

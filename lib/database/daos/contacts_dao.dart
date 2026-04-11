@@ -1,4 +1,4 @@
-import 'package:drift/drift.dart';
+﻿import 'package:drift/drift.dart';
 
 import '../app_database.dart';
 
@@ -64,6 +64,10 @@ class ContactsDao extends DatabaseAccessor<AppDatabase>
   ///
   /// If the identity does not exist a new stub contact is created and linked.
   /// Returns the resolved [contactId].
+  ///
+  /// When the identity already exists or a contact is matched by display name,
+  /// [primaryAvatarUrl] on the contact row is also updated whenever [avatarUrl]
+  /// is a valid HTTP(S) URL.
   Future<int> upsertIdentity({
     required String source,
     required String externalId,
@@ -86,6 +90,15 @@ class ContactsDao extends DatabaseAccessor<AppDatabase>
           updatedAt: Value(DateTime.now()),
         ),
       );
+      if (_isValidAvatarUrl(avatarUrl)) {
+        await (update(contacts)..where((t) => t.id.equals(existing.contactId)))
+            .write(
+          ContactsCompanion(
+            primaryAvatarUrl: Value(avatarUrl),
+            updatedAt: Value(DateTime.now()),
+          ),
+        );
+      }
       return existing.contactId;
     }
 
@@ -107,6 +120,14 @@ class ContactsDao extends DatabaseAccessor<AppDatabase>
 
       if (linkedByName != null) {
         contactId = linkedByName.read<int>('id');
+        if (_isValidAvatarUrl(avatarUrl)) {
+          await (update(contacts)..where((t) => t.id.equals(contactId))).write(
+            ContactsCompanion(
+              primaryAvatarUrl: Value(avatarUrl),
+              updatedAt: Value(DateTime.now()),
+            ),
+          );
+        }
       } else {
         final contact = await insertStubContact(
           displayName: displayName,
@@ -136,6 +157,11 @@ class ContactsDao extends DatabaseAccessor<AppDatabase>
     );
 
     return contactId;
+  }
+
+  bool _isValidAvatarUrl(String? url) {
+    if (url == null || url.isEmpty) return false;
+    return url.startsWith('http://') || url.startsWith('https://');
   }
 
   Stream<List<ContactIdentity>> watchIdentitiesForContact(int contactId) =>

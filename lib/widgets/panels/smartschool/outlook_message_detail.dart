@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -6,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_all/webview_all.dart';
 
+import '../../../controllers/status_controller.dart';
 import '../../../providers/database_provider.dart';
 import '../../../services/office365_mail_service.dart';
 import '../../../services/smartschool_messages_service.dart';
@@ -27,6 +29,7 @@ class _OutlookMessageDetailViewState
 
   Future<_OutlookDetailPayload?> _load() async {
     final db = ref.read(appDatabaseProvider);
+    final status = ref.read(statusProvider.notifier);
 
     Message? row = await db.messagesDao.getMessageById(widget.header.id);
     if (row == null || row.source != 'outlook') {
@@ -39,6 +42,7 @@ class _OutlookMessageDetailViewState
     if (row == null) return null;
 
     var resolvedRow = row;
+    var downloadedFromServer = false;
 
     final hasUnresolvedCid = (resolvedRow.bodyRaw ?? '').toLowerCase().contains(
       'cid:',
@@ -53,8 +57,16 @@ class _OutlookMessageDetailViewState
             .refreshMessageDetail(resolvedRow.id);
         resolvedRow =
             await db.messagesDao.getMessageById(resolvedRow.id) ?? resolvedRow;
+        downloadedFromServer = true;
       } catch (_) {}
     }
+
+    status.add(
+      StatusEntryType.info,
+      downloadedFromServer
+          ? 'Outlook detail downloaded from Microsoft Graph (message ${resolvedRow.id}).'
+          : 'Outlook detail loaded from local database (message ${resolvedRow.id}).',
+    );
 
     final participants = await db.messagesDao.getParticipants(resolvedRow.id);
     final attachments = await db.attachmentsDao.getAttachmentsForMessage(
@@ -256,6 +268,111 @@ class _OutlookMessageDetailViewState
     }
   }
 
+  Future<void> _dumpOutlookDebugInfo(_OutlookDetailPayload payload) async {
+    final db = ref.read(appDatabaseProvider);
+    final row = payload.row;
+
+    final contactIds = payload.participants
+        .map((p) => p.contactId)
+        .whereType<int>()
+        .toSet();
+
+    final contacts = <int, Contact>{};
+    final identitiesByContact = <int, List<ContactIdentity>>{};
+    for (final cId in contactIds) {
+      final contact = await db.contactsDao.getContactById(cId);
+      if (contact != null) contacts[cId] = contact;
+      identitiesByContact[cId] = await (db.select(
+        db.contactIdentities,
+      )..where((t) => t.contactId.equals(cId))).get();
+    }
+
+    final bodyRaw = row.bodyRaw ?? '';
+    final buf = StringBuffer()
+      ..writeln('========== Outlook Message Debug ==========')
+      ..writeln('--- DB Message Row ---')
+      ..writeln(
+        jsonEncode({
+          'id': row.id,
+          'source': row.source,
+          'externalId': row.externalId,
+          'mailbox': row.mailbox,
+          'subject': row.subject,
+          'isRead': row.isRead,
+          'isArchived': row.isArchived,
+          'isDeleted': row.isDeleted,
+          'hasAttachments': row.hasAttachments,
+          'sentAt': row.sentAt?.toIso8601String(),
+          'receivedAt': row.receivedAt.toIso8601String(),
+          'detailFetchedAt': row.detailFetchedAt?.toIso8601String(),
+          'bodyFormat': row.bodyFormat,
+          'rawHeaderJson': row.rawHeaderJson,
+          'rawDetailJson': row.rawDetailJson,
+          'body_length': bodyRaw.length,
+          'body_preview': bodyRaw.length > 300
+              ? bodyRaw.substring(0, 300)
+              : bodyRaw,
+        }),
+      )
+      ..writeln('--- Participants (${payload.participants.length}) ---');
+
+    for (final p in payload.participants) {
+      buf.writeln(
+        jsonEncode({
+          'id': p.id,
+          'messageId': p.messageId,
+          'contactId': p.contactId,
+          'contactIdentityId': p.contactIdentityId,
+          'role': p.role,
+          'position': p.position,
+          'displayNameSnapshot': p.displayNameSnapshot,
+          'addressSnapshot': p.addressSnapshot,
+        }),
+      );
+    }
+
+    for (final cId in contactIds) {
+      final contact = contacts[cId];
+      final identities = identitiesByContact[cId] ?? [];
+      buf
+        ..writeln('--- Contact $cId ---')
+        ..writeln(
+          jsonEncode(
+            contact != null
+                ? {
+                    'id': contact.id,
+                    'displayName': contact.displayName,
+                    'primaryAvatarUrl': contact.primaryAvatarUrl,
+                    'kind': contact.kind,
+                    'isStub': contact.isStub,
+                    'createdAt': contact.createdAt.toIso8601String(),
+                    'updatedAt': contact.updatedAt.toIso8601String(),
+                  }
+                : {'error': 'contact not found'},
+          ),
+        )
+        ..writeln('  Identities (${identities.length}):');
+      for (final identity in identities) {
+        buf
+          ..write('  ')
+          ..writeln(
+            jsonEncode({
+              'id': identity.id,
+              'source': identity.source,
+              'externalId': identity.externalId,
+              'displayNameSnapshot': identity.displayNameSnapshot,
+              'avatarUrlSnapshot': identity.avatarUrlSnapshot,
+              'lastSeenAt': identity.lastSeenAt.toIso8601String(),
+              'rawPayloadJson': identity.rawPayloadJson,
+            }),
+          );
+      }
+    }
+
+    buf.writeln('==========================================');
+    debugPrint(buf.toString());
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -344,6 +461,13 @@ class _OutlookMessageDetailViewState
                           )
                         : const Icon(Icons.refresh, size: 16),
                     label: Text(_refreshing ? 'Refreshing...' : 'Refresh'),
+                  ),
+                  const SizedBox(width: 4),
+                  IconButton(
+                    icon: const Icon(Icons.bug_report_outlined, size: 18),
+                    tooltip: 'Dump debug info to console',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => unawaited(_dumpOutlookDebugInfo(payload)),
                   ),
                 ],
               ),
@@ -497,6 +621,7 @@ class _OutlookHtmlBodyView extends StatefulWidget {
 
 class _OutlookHtmlBodyViewState extends State<_OutlookHtmlBodyView> {
   late final WebViewController _controller;
+  Object? _webViewError;
 
   static String _wrapHtml(String body) =>
       '''<!DOCTYPE html>
@@ -535,6 +660,40 @@ class _OutlookHtmlBodyViewState extends State<_OutlookHtmlBodyView> {
 <body>$body</body>
 </html>''';
 
+  static String _plainText(String html) {
+    return html
+        .replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n')
+        .replaceAll(
+          RegExp(r'</(p|div|li|tr|h[1-6])>', caseSensitive: false),
+          '\n',
+        )
+        .replaceAll(RegExp(r'<[^>]+>'), ' ')
+        .replaceAll('&nbsp;', ' ')
+        .replaceAll('&amp;', '&')
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&quot;', '"')
+        .replaceAll('&#39;', "'")
+        .replaceAll(RegExp(r'\n\s*\n+'), '\n\n')
+        .replaceAll(RegExp(r'[ \t]+'), ' ')
+        .trim();
+  }
+
+  Future<void> _loadHtml(String html) async {
+    try {
+      await _controller.loadHtmlString(_wrapHtml(html));
+      if (!mounted || _webViewError == null) return;
+      setState(() {
+        _webViewError = null;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _webViewError = error;
+      });
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -548,20 +707,54 @@ class _OutlookHtmlBodyViewState extends State<_OutlookHtmlBodyView> {
             unawaited(launchUrl(uri, mode: LaunchMode.externalApplication));
           }
         },
-      )
-      ..loadHtmlString(_wrapHtml(widget.html));
+      );
+    unawaited(_loadHtml(widget.html));
   }
 
   @override
   void didUpdateWidget(covariant _OutlookHtmlBodyView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.html != widget.html) {
-      _controller.loadHtmlString(_wrapHtml(widget.html));
+      unawaited(_loadHtml(widget.html));
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_webViewError != null) {
+      final colorScheme = Theme.of(context).colorScheme;
+      final fallbackBody = _plainText(widget.html);
+      return Container(
+        color: colorScheme.surface,
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: colorScheme.errorContainer,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                'Embedded message view is unavailable on this Windows session. Showing a plain-text fallback instead.\n$_webViewError',
+                style: TextStyle(color: colorScheme.onErrorContainer),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: SingleChildScrollView(
+                child: SelectableText(
+                  fallbackBody.isEmpty ? widget.html : fallbackBody,
+                  style: const TextStyle(fontSize: 13, height: 1.35),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     return WebViewWidget(controller: _controller);
   }
 }

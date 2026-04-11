@@ -1,0 +1,25 @@
+name: smartschool_researcher_mcp
+description: A Model Context Protocol (MCP) server for querying SmartSchool data using the dart API.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.10.1
+
+dependencies:
+  # SmartSchool API
+  flutter_smartschool:
+    path: ../../flutter_smartschool
+  
+  # YAML parsing for credentials
+  yaml: ^3.1.2
+  
+  # JSON encoding/decoding
+  convert: ^3.1.1
+  
+  # Logging
+  logging: ^1.2.0
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.25.6

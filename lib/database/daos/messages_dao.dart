@@ -263,8 +263,13 @@ class MessagesDao extends DatabaseAccessor<AppDatabase>
             ORDER BY sp.position ASC
             LIMIT 1
           ),
+          json_extract(m.raw_header_json, '\$.from'),
           ''
-        ) AS sender_name
+        ) AS sender_name,
+        COALESCE(
+          json_extract(m.raw_header_json, '\$.from_image'),
+          ''
+        ) AS sender_image
       FROM message_participants mp
       INNER JOIN messages m ON m.id = mp.message_id
       WHERE
@@ -293,7 +298,7 @@ class MessagesDao extends DatabaseAccessor<AppDatabase>
         id: messageId,
         source: row.read<String>('source'),
         from: row.read<String>('sender_name'),
-        fromImage: '',
+        fromImage: row.read<String>('sender_image'),
         subject: row.read<String>('subject'),
         date: activityAt,
         status: row.read<bool>('is_read') ? 1 : 0,
@@ -338,6 +343,54 @@ class MessagesDao extends DatabaseAccessor<AppDatabase>
     ).get();
 
     return rows.map((row) => row.read<int>('contact_id')).toSet();
+  }
+
+  /// Hard-delete messages for [source]/[mailbox] whose external ID is NOT in
+  /// [activeExternalIds]. Cleans up participants, attachments, and FTS rows
+  /// in the same transaction.
+  ///
+  /// Returns the number of deleted messages.
+  Future<int> deleteStaleMessages({
+    required String source,
+    required String mailbox,
+    required Set<String> activeExternalIds,
+  }) async {
+    final allRows =
+        await (selectOnly(messages)
+              ..addColumns([messages.id, messages.externalId])
+              ..where(
+                messages.source.equals(source) &
+                    messages.mailbox.equals(mailbox),
+              ))
+            .map(
+              (row) => (
+                id: row.read(messages.id)!,
+                externalId: row.read(messages.externalId)!,
+              ),
+            )
+            .get();
+
+    final staleIds = allRows
+        .where((r) => !activeExternalIds.contains(r.externalId))
+        .map((r) => r.id)
+        .toList();
+
+    if (staleIds.isEmpty) return 0;
+
+    await transaction(() async {
+      for (final id in staleIds) {
+        await customStatement('DELETE FROM message_fts WHERE rowid = ?', [id]);
+      }
+      await (delete(
+        messageParticipants,
+      )..where((t) => t.messageId.isIn(staleIds))).go();
+      await (delete(
+        attachedDatabase.messageAttachments,
+      )..where((t) => t.messageId.isIn(staleIds))).go();
+      await (delete(messages)..where((t) => t.id.isIn(staleIds))).go();
+    });
+
+    return staleIds.length;
   }
 
   DateTime _parseSqlDateTime(Object? raw) {

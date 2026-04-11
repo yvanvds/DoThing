@@ -1,245 +1,363 @@
-import 'dart:async';
 import 'dart:convert';
 
-import 'package:py_engine_desktop/py_engine_desktop.dart';
+import 'package:flutter_smartschool/flutter_smartschool.dart';
 
 import '../models/smartschool_message.dart';
 
-/// Low-level JSON-line protocol bridge to the Python smartschool process.
-///
-/// Each command is a JSON object sent on a single line to the process's stdin.
-/// Each response is a JSON object received on a single line from stdout.
+/// Compatibility bridge that adapts `flutter_smartschool` to the app's
+/// existing Smartschool DTOs and controller contracts.
 class SmartschoolBridge {
-  SmartschoolBridge(this._script) {
-    _stdoutSub = _script.stdout.listen(_onStdout);
-    _stderrSub = _script.stderr.listen(_onStderr);
+  SmartschoolBridge._(this._client) : _messages = MessagesService(_client);
 
-    // Handle unexpected process termination.
-    _script.exitCode.then(_onProcessExit);
-  }
-
-  final PythonScript _script;
-  StreamSubscription<String>? _stdoutSub;
-  StreamSubscription<String>? _stderrSub;
-
-  int _nextId = 0;
-  final Map<int, Completer<Map<String, dynamic>>> _pending = {};
+  final SmartschoolClient _client;
+  final MessagesService _messages;
   final List<String> _stderrLog = [];
 
-  /// Stderr output collected from the Python process (for debugging).
+  /// Kept for backward compatibility with existing debug UI.
+  ///
+  /// This bridge no longer runs a Python subprocess, so the list stays empty
+  /// unless explicit adapter-level diagnostics are added.
   List<String> get stderrLog => List.unmodifiable(_stderrLog);
 
-  // ---------------------------------------------------------------------------
-  // Internal protocol handling
-  // ---------------------------------------------------------------------------
-
-  void _onStdout(String line) {
-    if (line.trim().isEmpty) return;
+  static Future<SmartschoolBridge> connect({
+    required String username,
+    required String password,
+    required String mainUrl,
+    String? mfa,
+  }) async {
     try {
-      final data = jsonDecode(line) as Map<String, dynamic>;
-      final id = data['id'] as int?;
-      if (id != null && _pending.containsKey(id)) {
-        _pending.remove(id)!.complete(data);
-      }
-    } catch (_) {
-      // Non-JSON output – treat as debug noise.
-      _stderrLog.add('[stdout] $line');
+      final client = await SmartschoolClient.create(
+        AppCredentials(
+          username: username,
+          password: password,
+          mainUrl: mainUrl,
+          mfa: (mfa != null && mfa.trim().isNotEmpty) ? mfa : null,
+        ),
+      );
+      await client.ensureAuthenticated();
+      return SmartschoolBridge._(client);
+    } catch (error) {
+      throw SmartschoolBridgeException(error.toString());
     }
   }
 
-  void _onStderr(String line) {
-    _stderrLog.add(line);
-  }
-
-  void _onProcessExit(int code) {
-    final error = SmartschoolBridgeException(
-      'Python process exited with code $code',
-    );
-    for (final completer in _pending.values) {
-      if (!completer.isCompleted) completer.completeError(error);
-    }
-    _pending.clear();
-  }
-
-  /// Send a command and wait for the matching response.
-  Future<Map<String, dynamic>> send(
-    String action, [
-    Map<String, dynamic> params = const {},
-  ]) {
-    final id = ++_nextId;
-    final command = <String, dynamic>{'action': action, 'id': id, ...params};
-    final completer = Completer<Map<String, dynamic>>();
-    _pending[id] = completer;
-    _script.process.stdin.writeln(jsonEncode(command));
-    return completer.future.timeout(
-      const Duration(seconds: 60),
-      onTimeout: () {
-        _pending.remove(id);
-        throw TimeoutException('Bridge timed out for action "$action"');
-      },
-    );
-  }
-
-  /// Validate the response – throws on error.
-  Map<String, dynamic> _check(Map<String, dynamic> response) {
-    if (response.containsKey('error')) {
-      final errorType = response['error_type'] ?? 'PythonError';
-      throw SmartschoolBridgeException('$errorType: ${response['error']}');
-    }
-    return response;
-  }
-
-  // ---------------------------------------------------------------------------
-  // Typed commands
-  // ---------------------------------------------------------------------------
-
-  /// Verify the bridge process is alive.
   Future<bool> ping() async {
-    final res = await send('ping');
-    return res['pong'] == true;
+    try {
+      await _client.ensureAuthenticated();
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
-  /// Verify that required Python packages are importable.
-  Future<List<String>> checkPackages() async {
-    final res = _check(await send('check_packages'));
-    return List<String>.from(res['missing'] ?? []);
-  }
+  Future<List<String>> checkPackages() async => const [];
 
-  /// Authenticate with Smartschool using direct credentials.
   Future<void> login({
     required String username,
     required String password,
     required String url,
     String mfa = '',
   }) async {
-    _check(
-      await send('login', {
-        'username': username,
-        'password': password,
-        'url': url,
-        'mfa': mfa,
-      }),
-    );
+    try {
+      await _client.ensureAuthenticated();
+    } catch (error) {
+      throw SmartschoolBridgeException(error.toString());
+    }
   }
 
-  /// Clear the Python-side session.
   Future<void> logout() async {
-    _check(await send('logout'));
+    try {
+      await _client.clearCookies();
+    } catch (error) {
+      throw SmartschoolBridgeException(error.toString());
+    }
   }
 
-  /// Check whether the Python session holds an active login.
   Future<bool> isAuthenticated() async {
-    final res = _check(await send('is_authenticated'));
-    return res['authenticated'] as bool? ?? false;
+    try {
+      await _client.ensureAuthenticated();
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
-  /// Fetch message headers for the given [boxType].
   Future<List<SmartschoolMessageHeader>> getMessageHeaders({
     SmartschoolBoxType boxType = SmartschoolBoxType.inbox,
     List<int> alreadySeenIds = const [],
   }) async {
-    final res = _check(
-      await send('get_message_headers', {
-        'box_type': boxType.value,
-        if (alreadySeenIds.isNotEmpty) 'already_seen_ids': alreadySeenIds,
-      }),
-    );
-    final list = res['headers'] as List<dynamic>? ?? [];
-    return list
-        .cast<Map<String, dynamic>>()
-        .map(SmartschoolMessageHeader.fromJson)
-        .toList();
+    try {
+      final headers = await _messages.getHeaders(
+        boxType: _mapBoxType(boxType),
+        alreadySeenIds: alreadySeenIds,
+      );
+      return headers.map(_toHeader).toList();
+    } catch (error) {
+      throw SmartschoolBridgeException(error.toString());
+    }
   }
 
-  /// Fetch message headers grouped into conversation threads.
   Future<List<SmartschoolMessageThread>> getThreadedHeaders({
     SmartschoolBoxType boxType = SmartschoolBoxType.inbox,
     List<int> alreadySeenIds = const [],
   }) async {
-    final res = _check(
-      await send('get_threaded_headers', {
-        'box_type': boxType.value,
-        if (alreadySeenIds.isNotEmpty) 'already_seen_ids': alreadySeenIds,
-      }),
+    final headers = await getMessageHeaders(
+      boxType: boxType,
+      alreadySeenIds: alreadySeenIds,
     );
-    final list = res['threads'] as List<dynamic>? ?? [];
-    return list
-        .cast<Map<String, dynamic>>()
-        .map(SmartschoolMessageThread.fromJson)
-        .toList();
+    if (headers.isEmpty) return const [];
+
+    final grouped = <String, List<SmartschoolMessageHeader>>{};
+    for (final header in headers) {
+      final key = _normalizeSubject(header.subject);
+      grouped.putIfAbsent(key, () => []).add(header);
+    }
+
+    final threads =
+        grouped.entries.map((entry) {
+          final messages = [...entry.value]
+            ..sort((a, b) => _parseIso(b.date).compareTo(_parseIso(a.date)));
+          final latest = messages.first;
+          return SmartschoolMessageThread(
+            threadKey: entry.key,
+            subject: latest.subject,
+            latestDate: latest.date,
+            messageCount: messages.length,
+            hasUnread: messages.any((m) => m.unread),
+            hasReply: messages.any((m) => m.hasReply),
+            messages: messages,
+          );
+        }).toList()..sort(
+          (a, b) => _parseIso(b.latestDate).compareTo(_parseIso(a.latestDate)),
+        );
+
+    return threads;
   }
 
-  /// Fetch the full message thread for [messageId].
   Future<List<SmartschoolMessageDetail>> getMessage(int messageId) async {
-    final res = _check(await send('get_message', {'message_id': messageId}));
-    final list = res['messages'] as List<dynamic>? ?? [];
-    return list
-        .cast<Map<String, dynamic>>()
-        .map(SmartschoolMessageDetail.fromJson)
-        .toList();
+    try {
+      final detail = await _messages.getMessage(messageId);
+      if (detail == null) return const [];
+      return [_toDetail(detail)];
+    } on SmartschoolParsingError catch (error) {
+      // Log parsing errors for debugging
+      _stderrLog.add(
+        'SmartschoolBridge: Parsing error for message $messageId: $error',
+      );
+      // Return empty list - the header will be used as fallback by the UI layer
+      return const [];
+    } catch (error) {
+      throw SmartschoolBridgeException(error.toString());
+    }
   }
 
-  /// List attachment metadata for [messageId] (without downloading bytes).
   Future<List<SmartschoolAttachment>> listAttachments(int messageId) async {
-    final res = _check(
-      await send('list_attachments', {'message_id': messageId}),
-    );
-    final list = res['attachments'] as List<dynamic>? ?? [];
-    return list
-        .cast<Map<String, dynamic>>()
-        .map(SmartschoolAttachment.fromJson)
-        .toList();
+    try {
+      final attachments = await _messages.getAttachments(messageId);
+      return attachments
+          .map(
+            (a) => SmartschoolAttachment(
+              index: a.fileId,
+              name: a.name,
+              size: _parseSizeBytes(a.size),
+              sizeLabel: a.size,
+            ),
+          )
+          .toList();
+    } catch (error) {
+      throw SmartschoolBridgeException(error.toString());
+    }
   }
 
-  /// Download a single attachment by [attachmentIndex] for [messageId].
   Future<SmartschoolAttachment> downloadAttachment(
     int messageId,
     int attachmentIndex,
   ) async {
-    final res = _check(
-      await send('download_attachment', {
-        'message_id': messageId,
-        'attachment_index': attachmentIndex,
-      }),
-    );
-    final item = res['attachment'] as Map<String, dynamic>?;
-    if (item == null) {
-      throw SmartschoolBridgeException('Invalid attachment response payload.');
+    try {
+      final attachments = await _messages.getAttachments(messageId);
+      final selected = attachments.firstWhere(
+        (a) => a.fileId == attachmentIndex,
+        orElse: () => throw SmartschoolBridgeException(
+          'Attachment with fileId $attachmentIndex was not found.',
+        ),
+      );
+      final bytes = await selected.download(_client);
+      return SmartschoolAttachment(
+        index: selected.fileId,
+        name: selected.name,
+        size: _parseSizeBytes(selected.size),
+        sizeLabel: selected.size,
+        contentBase64: base64Encode(bytes),
+      );
+    } catch (error) {
+      if (error is SmartschoolBridgeException) rethrow;
+      throw SmartschoolBridgeException(error.toString());
     }
-    return SmartschoolAttachment.fromJson(item);
   }
 
-  /// Mark a message as unread.
   Future<void> markUnread(int messageId) async {
-    _check(await send('mark_unread', {'message_id': messageId}));
+    try {
+      await _messages.markUnread(messageId);
+    } catch (error) {
+      throw SmartschoolBridgeException(error.toString());
+    }
   }
 
-  /// Set a label / flag colour on a message.
   Future<void> setLabel(int messageId, SmartschoolMessageLabel label) async {
-    _check(
-      await send('set_label', {'message_id': messageId, 'label': label.value}),
+    try {
+      await _messages.setLabel(messageId, _mapLabel(label));
+    } catch (error) {
+      throw SmartschoolBridgeException(error.toString());
+    }
+  }
+
+  Future<void> archive(dynamic messageId) async {
+    try {
+      final ids = switch (messageId) {
+        int id => <int>[id],
+        List<int> list => list,
+        List<dynamic> list => list.whereType<int>().toList(),
+        _ => <int>[],
+      };
+      if (ids.isEmpty) return;
+      await _messages.moveToArchive(ids);
+    } catch (error) {
+      throw SmartschoolBridgeException(error.toString());
+    }
+  }
+
+  Future<void> trash(int messageId) async {
+    try {
+      await _messages.moveToTrash(messageId);
+    } catch (error) {
+      throw SmartschoolBridgeException(error.toString());
+    }
+  }
+
+  void dispose() {}
+
+  BoxType _mapBoxType(SmartschoolBoxType boxType) {
+    switch (boxType) {
+      case SmartschoolBoxType.inbox:
+        return BoxType.inbox;
+      case SmartschoolBoxType.draft:
+        return BoxType.draft;
+      case SmartschoolBoxType.scheduled:
+        return BoxType.scheduled;
+      case SmartschoolBoxType.sent:
+        return BoxType.sent;
+      case SmartschoolBoxType.trash:
+        return BoxType.trash;
+    }
+  }
+
+  MessageLabel _mapLabel(SmartschoolMessageLabel label) {
+    switch (label) {
+      case SmartschoolMessageLabel.noFlag:
+        return MessageLabel.noFlag;
+      case SmartschoolMessageLabel.greenFlag:
+        return MessageLabel.greenFlag;
+      case SmartschoolMessageLabel.yellowFlag:
+        return MessageLabel.yellowFlag;
+      case SmartschoolMessageLabel.redFlag:
+        return MessageLabel.redFlag;
+      case SmartschoolMessageLabel.blueFlag:
+        return MessageLabel.blueFlag;
+    }
+  }
+
+  SmartschoolMessageHeader _toHeader(ShortMessage m) {
+    return SmartschoolMessageHeader(
+      id: m.id,
+      source: 'smartschool',
+      from: m.sender,
+      fromImage: m.fromImage,
+      subject: m.subject,
+      date: m.date.toIso8601String(),
+      status: m.status,
+      unread: m.unread,
+      hasAttachment: m.attachment > 0,
+      label: m.coloredFlag > 0,
+      deleted: m.deleted,
+      allowReply: m.allowReply,
+      allowReplyEnabled: m.allowReplyEnabled,
+      hasReply: m.hasReply,
+      hasForward: m.hasForward,
+      realBox: m.realBox,
+      sendDate: m.sendDate?.toIso8601String(),
     );
   }
 
-  /// Move a message (or list of IDs) to the archive.
-  Future<void> archive(dynamic messageId) async {
-    _check(await send('archive', {'message_id': messageId}));
+  SmartschoolMessageDetail _toDetail(FullMessage m) {
+    return SmartschoolMessageDetail(
+      id: m.id,
+      from: m.sender,
+      subject: m.subject,
+      body: m.body,
+      date: m.date.toIso8601String(),
+      to: m.to,
+      status: m.status,
+      attachment: m.attachment,
+      unread: m.unread,
+      label: m.coloredFlag > 0,
+      receivers: m.receivers,
+      ccReceivers: m.ccReceivers,
+      bccReceivers: m.bccReceivers,
+      senderPicture: m.senderPicture,
+      fromTeam: m.fromTeam,
+      totalNrOtherToReceivers: m.totalNrOtherToReceivers,
+      totalNrOtherCcReceivers: m.totalNrOtherCcReceivers,
+      totalNrOtherBccReceivers: m.totalNrOtherBccReceivers,
+      canReply: m.canReply,
+      hasReply: m.hasReply,
+      hasForward: m.hasForward,
+      sendDate: m.sendDate?.toIso8601String(),
+    );
   }
 
-  /// Move a message to the trash.
-  Future<void> trash(int messageId) async {
-    _check(await send('trash', {'message_id': messageId}));
+  static String _normalizeSubject(String subject) {
+    final trimmed = subject.trim();
+    if (trimmed.isEmpty) return '(no subject)';
+    final stripped = trimmed.replaceFirst(
+      RegExp(
+        r'^(?:(?:re|fw|fwd|aw|wg)\s*(?:\[\d+\])?\s*:\s*)+',
+        caseSensitive: false,
+      ),
+      '',
+    );
+    return (stripped.isEmpty ? trimmed : stripped).toLowerCase();
   }
 
-  /// Shut down the Python process.
-  void dispose() {
-    _stdoutSub?.cancel();
-    _stderrSub?.cancel();
-    _script.stop();
+  static DateTime _parseIso(String value) =>
+      DateTime.tryParse(value)?.toUtc() ??
+      DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+
+  static int _parseSizeBytes(String raw) {
+    final input = raw.trim();
+    if (input.isEmpty) return 0;
+
+    final direct = int.tryParse(input);
+    if (direct != null) return direct;
+
+    final match = RegExp(
+      r'^([0-9]+(?:\.[0-9]+)?)\s*([kmgt]?b)$',
+      caseSensitive: false,
+    ).firstMatch(input);
+    if (match == null) return 0;
+
+    final value = double.tryParse(match.group(1) ?? '0') ?? 0;
+    final unit = (match.group(2) ?? 'b').toLowerCase();
+    final multiplier = switch (unit) {
+      'kb' => 1024,
+      'mb' => 1024 * 1024,
+      'gb' => 1024 * 1024 * 1024,
+      'tb' => 1024 * 1024 * 1024 * 1024,
+      _ => 1,
+    };
+    return (value * multiplier).round();
   }
 }
 
-/// Exception thrown when the Python bridge returns an error.
 class SmartschoolBridgeException implements Exception {
   SmartschoolBridgeException(this.message);
   final String message;

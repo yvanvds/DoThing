@@ -72,9 +72,12 @@ class SmartschoolMessagesController extends Notifier<void> {
   }
 
   /// Fetch the full message thread for [messageId].
-  Future<List<SmartschoolMessageDetail>> getMessage(int messageId) async {
+  Future<List<SmartschoolMessageDetail>> getMessage(
+    int messageId, {
+    bool reportStatus = true,
+  }) async {
     final message = await _bridge.getMessage(messageId);
-    if (message.isNotEmpty) {
+    if (reportStatus && message.isNotEmpty) {
       ref
           .read(statusProvider.notifier)
           .add(
@@ -162,6 +165,7 @@ class SmartschoolMessageCacheController
     int messageId,
     SmartschoolBridge bridge, {
     SmartschoolSyncRepository? syncRepository,
+    SmartschoolMessageHeader? fallbackHeader,
   }) async {
     if (state.containsKey(messageId)) {
       return state[messageId]!;
@@ -180,7 +184,11 @@ class SmartschoolMessageCacheController
         externalId: messageId.toString(),
       );
       if (_hasPersistedFullDetail(local)) {
-        final localDetail = _detailFromLocalRow(local!, messageId);
+        final localDetail = _normalizeDetail(
+          _detailFromLocalRow(local!, messageId),
+          fallbackHeader: fallbackHeader,
+          fallbackHeaderFromDb: _headerFromLocalRow(local),
+        );
         state = {...state, messageId: localDetail};
         return localDetail;
       }
@@ -191,7 +199,13 @@ class SmartschoolMessageCacheController
       throw StateError('No message detail returned for ID $messageId');
     }
 
-    final detail = messages.first;
+    final detail = _normalizeDetail(
+      messages.first,
+      fallbackHeader: fallbackHeader,
+      fallbackHeaderFromDb: db == null
+          ? null
+          : await _loadHeaderFromDb(db, messageId),
+    );
     state = {...state, messageId: detail};
 
     var repository = syncRepository;
@@ -211,6 +225,18 @@ class SmartschoolMessageCacheController
     }
 
     return detail;
+  }
+
+  Future<SmartschoolMessageHeader?> _loadHeaderFromDb(
+    AppDatabase db,
+    int messageId,
+  ) async {
+    final local = await db.messagesDao.findMessage(
+      source: 'smartschool',
+      externalId: messageId.toString(),
+    );
+    if (local == null) return null;
+    return _headerFromLocalRow(local);
   }
 
   bool _hasPersistedFullDetail(Message? row) {
@@ -262,6 +288,126 @@ class SmartschoolMessageCacheController
       hasForward: rawDetail?['has_forward'] as bool?,
       sendDate: rawDetail?['send_date'] as String?,
     );
+  }
+
+  SmartschoolMessageHeader? _headerFromLocalRow(Message row) {
+    final rawHeader = row.rawHeaderJson;
+    if (rawHeader == null || rawHeader.trim().isEmpty) return null;
+
+    try {
+      final decoded = jsonDecode(rawHeader);
+      if (decoded is! Map<String, dynamic>) return null;
+
+      final externalId = int.tryParse(row.externalId) ?? row.id;
+      return SmartschoolMessageHeader(
+        id: externalId,
+        source: row.source,
+        from: (decoded['from'] as String?) ?? '',
+        fromImage: (decoded['from_image'] as String?) ?? '',
+        subject: (decoded['subject'] as String?) ?? row.subject,
+        date: (decoded['date'] as String?) ?? row.receivedAt.toIso8601String(),
+        status: (decoded['status'] as int?) ?? (row.isRead ? 1 : 0),
+        unread: (decoded['unread'] as bool?) ?? !row.isRead,
+        hasAttachment: (decoded['attachment'] as bool?) ?? row.hasAttachments,
+        label: false,
+        deleted: (decoded['deleted'] as bool?) ?? row.isDeleted,
+        allowReply: true,
+        allowReplyEnabled: true,
+        hasReply: false,
+        hasForward: false,
+        realBox: (decoded['real_box'] as String?) ?? row.mailbox,
+        sendDate: decoded['send_date'] as String?,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  SmartschoolMessageDetail _normalizeDetail(
+    SmartschoolMessageDetail detail, {
+    SmartschoolMessageHeader? fallbackHeader,
+    SmartschoolMessageHeader? fallbackHeaderFromDb,
+  }) {
+    final header = fallbackHeader ?? fallbackHeaderFromDb;
+    final fallbackSubject = header?.subject ?? '';
+    final fallbackFrom = header?.from ?? '';
+    final fallbackAvatar =
+        (header != null && header.fromImage.trim().isNotEmpty)
+        ? header.fromImage
+        : null;
+
+    final normalizedSubject = _preferFallbackSubject(
+      detail.subject,
+      fallbackSubject,
+    );
+    final normalizedFrom = _preferFallbackSender(detail.from, fallbackFrom);
+
+    return SmartschoolMessageDetail(
+      id: detail.id,
+      from: normalizedFrom,
+      subject: normalizedSubject,
+      body: detail.body,
+      date: detail.date,
+      to: detail.to,
+      status: detail.status,
+      attachment: detail.attachment,
+      unread: detail.unread,
+      label: detail.label,
+      receivers: detail.receivers,
+      ccReceivers: detail.ccReceivers,
+      bccReceivers: detail.bccReceivers,
+      senderPicture: detail.senderPicture ?? fallbackAvatar,
+      fromTeam: detail.fromTeam,
+      totalNrOtherToReceivers: detail.totalNrOtherToReceivers,
+      totalNrOtherCcReceivers: detail.totalNrOtherCcReceivers,
+      totalNrOtherBccReceivers: detail.totalNrOtherBccReceivers,
+      canReply: detail.canReply,
+      hasReply: detail.hasReply,
+      hasForward: detail.hasForward,
+      sendDate: detail.sendDate,
+    );
+  }
+
+  String _preferFallbackSubject(String candidate, String fallback) {
+    final c = candidate.trim();
+    final f = fallback.trim();
+    if (c.isEmpty || _isMissingSubject(c)) {
+      return f.isNotEmpty ? f : candidate;
+    }
+    return candidate;
+  }
+
+  String _preferFallbackSender(String candidate, String fallback) {
+    final c = candidate.trim();
+    final f = fallback.trim();
+    if (c.isEmpty || _isUnavailableSender(c)) {
+      return f.isNotEmpty ? f : candidate;
+    }
+    return candidate;
+  }
+
+  bool _isMissingSubject(String value) {
+    final normalized = _normalizeLabel(value);
+    return normalized.contains('bericht zonder onderwerp') ||
+        normalized.contains('zonder onderwerp') ||
+        normalized.contains('no subject') ||
+        normalized.contains('without subject') ||
+        normalized.contains('subject unavailable');
+  }
+
+  bool _isUnavailableSender(String value) {
+    final normalized = _normalizeLabel(value);
+    return normalized.contains('niet beschikbaar') ||
+        normalized.contains('not available') ||
+        normalized.contains('onbekend');
+  }
+
+  String _normalizeLabel(String value) {
+    return value
+        .toLowerCase()
+        .replaceAll('*', ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
   }
 
   /// Clear the cache.
@@ -338,14 +484,12 @@ class SmartschoolPollingController
         final persisted = await ref
             .read(smartschoolSyncRepositoryProvider)
             .syncHeaders(allMessages);
-        if (persisted > 0) {
-          ref
-              .read(statusProvider.notifier)
-              .add(
-                StatusEntryType.info,
-                'Poll: ${allMessages.length} headers fetched · $persisted new/updated persisted.',
-              );
-        }
+        ref
+            .read(statusProvider.notifier)
+            .add(
+              StatusEntryType.info,
+              'Smartschool poll sync: ${allMessages.length} headers scanned · $persisted new/updated persisted.',
+            );
       } catch (error) {
         ref
             .read(statusProvider.notifier)

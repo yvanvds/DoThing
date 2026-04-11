@@ -2,7 +2,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../controllers/smartschool_settings_controller.dart';
 import '../controllers/status_controller.dart';
-import 'python_engine_service.dart';
 import 'smartschool_bridge.dart';
 
 /// High-level connection / authentication state.
@@ -25,7 +24,7 @@ enum SmartschoolConnectionState { disconnected, initializing, connected }
 /// ```
 class SmartschoolAuthController
     extends AsyncNotifier<SmartschoolConnectionState> {
-  PythonEngineService? _engine;
+  SmartschoolBridge? _bridge;
 
   @override
   Future<SmartschoolConnectionState> build() async =>
@@ -33,21 +32,20 @@ class SmartschoolAuthController
 
   /// The live bridge to the Python process. Throws if not connected.
   SmartschoolBridge get bridge {
-    if (_engine == null || !_engine!.isInitialized) {
+    if (_bridge == null) {
       throw StateError('Not connected to Smartschool.');
     }
-    return _engine!.bridge;
+    return _bridge!;
   }
 
-  /// Initialise the Python engine, install packages, and log in.
+  /// Initializes an authenticated Smartschool session.
   Future<void> connect() async {
     final status = ref.read(statusProvider.notifier);
     final settings = await ref.read(smartschoolSettingsProvider.future);
 
     if (settings.username.isEmpty ||
         settings.url.isEmpty ||
-        settings.password.isEmpty ||
-        settings.mfaSecret.isEmpty) {
+        settings.password.isEmpty) {
       status.add(
         StatusEntryType.error,
         'Smartschool settings are incomplete – configure them first.',
@@ -60,18 +58,11 @@ class SmartschoolAuthController
     state = await AsyncValue.guard(() async {
       final normalizedUrl = _normalizeMainUrl(settings.url);
 
-      // Engine init (idempotent – skips work already done).
-      _engine ??= PythonEngineService();
-      if (!_engine!.isInitialized) {
-        await _engine!.initialize(status);
-      }
-
-      // Login via the bridge.
-      status.add(StatusEntryType.info, 'Logging in to Smartschool…');
-      await _engine!.bridge.login(
+      status.add(StatusEntryType.info, 'Connecting to Smartschool…');
+      _bridge = await SmartschoolBridge.connect(
         username: settings.username,
         password: settings.password,
-        url: normalizedUrl,
+        mainUrl: normalizedUrl,
         mfa: settings.mfaSecret,
       );
       status.add(StatusEntryType.success, 'Logged in to Smartschool.');
@@ -128,15 +119,15 @@ class SmartschoolAuthController
     final status = ref.read(statusProvider.notifier);
 
     try {
-      if (_engine != null && _engine!.isInitialized) {
-        await _engine!.bridge.logout();
+      if (_bridge != null) {
+        await _bridge!.logout();
       }
     } catch (_) {
       // Best-effort logout.
     }
 
-    _engine?.dispose();
-    _engine = null;
+    _bridge?.dispose();
+    _bridge = null;
 
     state = const AsyncData(SmartschoolConnectionState.disconnected);
     status.add(StatusEntryType.info, 'Disconnected from Smartschool.');

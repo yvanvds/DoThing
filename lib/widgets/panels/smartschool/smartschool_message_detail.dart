@@ -28,10 +28,16 @@ class SmartschoolMessageDetailView extends ConsumerWidget {
     SmartschoolAuthController authNotifier,
   ) async {
     final syncRepo = ref.read(smartschoolSyncRepositoryProvider);
+    final hadLocalDetail = await _hasPersistedLocalDetail(ref);
     try {
       final detail = await ref
           .read(smartschoolMessageCacheProvider.notifier)
-          .getOrFetch(header.id, authNotifier.bridge, syncRepository: syncRepo);
+          .getOrFetch(
+            header.id,
+            authNotifier.bridge,
+            syncRepository: syncRepo,
+            fallbackHeader: header,
+          );
       final attachments = await ref
           .read(smartschoolMessagesProvider.notifier)
           .listAttachments(header.id);
@@ -39,6 +45,14 @@ class SmartschoolMessageDetailView extends ConsumerWidget {
       try {
         await syncRepo.syncAttachments(header.id, attachments);
       } catch (_) {}
+      ref
+          .read(statusProvider.notifier)
+          .add(
+            StatusEntryType.info,
+            hadLocalDetail
+                ? 'Smartschool detail loaded from local database (message ${header.id}).'
+                : 'Smartschool detail downloaded from Smartschool (message ${header.id}).',
+          );
       return _MessageDetailPayload(detail: detail, attachments: attachments);
     } catch (error, stackTrace) {
       final fallback = await _tryBuildFallbackPayload(ref, error);
@@ -66,6 +80,21 @@ class SmartschoolMessageDetailView extends ConsumerWidget {
       );
       rethrow;
     }
+  }
+
+  Future<bool> _hasPersistedLocalDetail(WidgetRef ref) async {
+    final db = ref.read(appDatabaseProvider);
+    final local = await db.messagesDao.findMessage(
+      source: 'smartschool',
+      externalId: header.id.toString(),
+    );
+    if (local == null || local.detailFetchedAt == null) {
+      return false;
+    }
+
+    final raw = local.bodyRaw?.trim() ?? '';
+    final text = local.bodyText?.trim() ?? '';
+    return raw.isNotEmpty || text.isNotEmpty;
   }
 
   Future<_MessageDetailPayload?> _tryBuildFallbackPayload(
@@ -214,6 +243,167 @@ class SmartschoolMessageDetailView extends ConsumerWidget {
         text.contains('fullmessage') || text.contains('pydantic');
 
     return isValidation && isFullMessageContext;
+  }
+
+  Future<void> _dumpDebugInfo(
+    WidgetRef ref,
+    SmartschoolMessageDetail msg,
+  ) async {
+    final db = ref.read(appDatabaseProvider);
+    final local = await db.messagesDao.findMessage(
+      source: 'smartschool',
+      externalId: header.id.toString(),
+    );
+
+    final participants = local != null
+        ? await db.messagesDao.getParticipants(local.id)
+        : <MessageParticipant>[];
+
+    final contactIds = participants
+        .map((p) => p.contactId)
+        .whereType<int>()
+        .toSet();
+
+    final contacts = <int, Contact>{};
+    final identitiesByContact = <int, List<ContactIdentity>>{};
+    for (final cId in contactIds) {
+      final contact = await db.contactsDao.getContactById(cId);
+      if (contact != null) contacts[cId] = contact;
+      identitiesByContact[cId] = await (db.select(
+        db.contactIdentities,
+      )..where((t) => t.contactId.equals(cId))).get();
+    }
+
+    final buf = StringBuffer()
+      ..writeln('========== Smartschool Message Debug ==========')
+      ..writeln('--- Header DTO ---')
+      ..writeln(
+        jsonEncode({
+          'id': header.id,
+          'source': header.source,
+          'from': header.from,
+          'fromImage': header.fromImage,
+          'subject': header.subject,
+          'date': header.date,
+          'status': header.status,
+          'unread': header.unread,
+          'hasAttachment': header.hasAttachment,
+          'label': header.label,
+          'realBox': header.realBox,
+          'sendDate': header.sendDate,
+        }),
+      )
+      ..writeln('--- Detail DTO ---')
+      ..writeln(
+        jsonEncode({
+          'id': msg.id,
+          'from': msg.from,
+          'subject': msg.subject,
+          'date': msg.date,
+          'status': msg.status,
+          'unread': msg.unread,
+          'to': msg.to,
+          'attachment': msg.attachment,
+          'senderPicture': msg.senderPicture,
+          'fromTeam': msg.fromTeam,
+          'canReply': msg.canReply,
+          'hasReply': msg.hasReply,
+          'hasForward': msg.hasForward,
+          'sendDate': msg.sendDate,
+          'body_length': msg.body.length,
+          'body_preview': msg.body.length > 300
+              ? msg.body.substring(0, 300)
+              : msg.body,
+        }),
+      );
+
+    if (local != null) {
+      buf
+        ..writeln('--- Local DB Message Row ---')
+        ..writeln(
+          jsonEncode({
+            'id': local.id,
+            'source': local.source,
+            'externalId': local.externalId,
+            'mailbox': local.mailbox,
+            'subject': local.subject,
+            'isRead': local.isRead,
+            'isArchived': local.isArchived,
+            'isDeleted': local.isDeleted,
+            'hasAttachments': local.hasAttachments,
+            'sentAt': local.sentAt?.toIso8601String(),
+            'receivedAt': local.receivedAt.toIso8601String(),
+            'detailFetchedAt': local.detailFetchedAt?.toIso8601String(),
+            'rawHeaderJson': local.rawHeaderJson,
+            'rawDetailJson': local.rawDetailJson,
+          }),
+        );
+    } else {
+      buf.writeln('--- Local DB Message Row: NOT FOUND ---');
+    }
+
+    buf.writeln('--- Participants (${participants.length}) ---');
+    for (final p in participants) {
+      buf.writeln(
+        jsonEncode({
+          'id': p.id,
+          'messageId': p.messageId,
+          'contactId': p.contactId,
+          'contactIdentityId': p.contactIdentityId,
+          'role': p.role,
+          'position': p.position,
+          'displayNameSnapshot': p.displayNameSnapshot,
+          'addressSnapshot': p.addressSnapshot,
+        }),
+      );
+    }
+
+    for (final cId in contactIds) {
+      final contact = contacts[cId];
+      final identities = identitiesByContact[cId] ?? [];
+      buf
+        ..writeln('--- Contact $cId ---')
+        ..writeln(
+          jsonEncode(
+            contact != null
+                ? {
+                    'id': contact.id,
+                    'displayName': contact.displayName,
+                    'primaryAvatarUrl': contact.primaryAvatarUrl,
+                    'kind': contact.kind,
+                    'isStub': contact.isStub,
+                    'createdAt': contact.createdAt.toIso8601String(),
+                    'updatedAt': contact.updatedAt.toIso8601String(),
+                  }
+                : {'error': 'contact not found'},
+          ),
+        )
+        ..writeln('  Identities (${identities.length}):');
+      for (final identity in identities) {
+        buf
+          ..write('  ')
+          ..writeln(
+            jsonEncode({
+              'id': identity.id,
+              'source': identity.source,
+              'externalId': identity.externalId,
+              'displayNameSnapshot': identity.displayNameSnapshot,
+              'avatarUrlSnapshot': identity.avatarUrlSnapshot,
+              'lastSeenAt': identity.lastSeenAt.toIso8601String(),
+              'rawPayloadJson': identity.rawPayloadJson,
+            }),
+          );
+      }
+    }
+
+    buf.writeln('===============================================');
+    debugPrint(buf.toString());
+    ref
+        .read(statusProvider.notifier)
+        .add(
+          StatusEntryType.info,
+          'Debug info dumped to console for message ${header.id}.',
+        );
   }
 
   Future<void> _handleAttachmentTap(
@@ -385,7 +575,7 @@ class SmartschoolMessageDetailView extends ConsumerWidget {
         Padding(
           padding: const EdgeInsets.all(12),
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Large avatar on the far left
               _DetailAvatar(imageUrl: avatarUrl, name: msg.from),
@@ -405,6 +595,12 @@ class SmartschoolMessageDetailView extends ConsumerWidget {
                     _buildMetaBox(context, msg),
                   ],
                 ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.bug_report_outlined, size: 18),
+                tooltip: 'Dump debug info to console',
+                visualDensity: VisualDensity.compact,
+                onPressed: () => unawaited(_dumpDebugInfo(ref, msg)),
               ),
             ],
           ),
@@ -764,6 +960,7 @@ class _HtmlBodyView extends StatefulWidget {
 
 class _HtmlBodyViewState extends State<_HtmlBodyView> {
   late final WebViewController _controller;
+  Object? _webViewError;
 
   static String _wrapHtml(String body) =>
       '''<!DOCTYPE html>
@@ -800,6 +997,40 @@ class _HtmlBodyViewState extends State<_HtmlBodyView> {
 <body>$body</body>
 </html>''';
 
+  static String _plainText(String html) {
+    return html
+        .replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n')
+        .replaceAll(
+          RegExp(r'</(p|div|li|tr|h[1-6])>', caseSensitive: false),
+          '\n',
+        )
+        .replaceAll(RegExp(r'<[^>]+>'), ' ')
+        .replaceAll('&nbsp;', ' ')
+        .replaceAll('&amp;', '&')
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&quot;', '"')
+        .replaceAll('&#39;', "'")
+        .replaceAll(RegExp(r'\n\s*\n+'), '\n\n')
+        .replaceAll(RegExp(r'[ \t]+'), ' ')
+        .trim();
+  }
+
+  Future<void> _loadHtml(String html) async {
+    try {
+      await _controller.loadHtmlString(_wrapHtml(_fixRelativeImageUrls(html)));
+      if (!mounted || _webViewError == null) return;
+      setState(() {
+        _webViewError = null;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _webViewError = error;
+      });
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -813,15 +1044,15 @@ class _HtmlBodyViewState extends State<_HtmlBodyView> {
             unawaited(launchUrl(uri, mode: LaunchMode.externalApplication));
           }
         },
-      )
-      ..loadHtmlString(_wrapHtml(_fixRelativeImageUrls(widget.html)));
+      );
+    unawaited(_loadHtml(widget.html));
   }
 
   @override
   void didUpdateWidget(_HtmlBodyView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.html != widget.html) {
-      _controller.loadHtmlString(_wrapHtml(_fixRelativeImageUrls(widget.html)));
+      unawaited(_loadHtml(widget.html));
     }
   }
 
@@ -858,6 +1089,40 @@ class _HtmlBodyViewState extends State<_HtmlBodyView> {
 
   @override
   Widget build(BuildContext context) {
+    if (_webViewError != null) {
+      final colorScheme = Theme.of(context).colorScheme;
+      final fallbackBody = _plainText(_fixRelativeImageUrls(widget.html));
+      return Container(
+        color: colorScheme.surface,
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: colorScheme.errorContainer,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                'Embedded message view is unavailable on this Windows session. Showing a plain-text fallback instead.\n$_webViewError',
+                style: TextStyle(color: colorScheme.onErrorContainer),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: SingleChildScrollView(
+                child: SelectableText(
+                  fallbackBody.isEmpty ? widget.html : fallbackBody,
+                  style: const TextStyle(fontSize: 13, height: 1.35),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     return WebViewWidget(controller: _controller);
   }
 }

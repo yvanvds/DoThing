@@ -66,6 +66,18 @@ class OutlookLatestMessage {
   }
 }
 
+class OutlookSyncResult {
+  const OutlookSyncResult({
+    required this.scannedCount,
+    required this.newCount,
+    required this.removedCount,
+  });
+
+  final int scannedCount;
+  final int newCount;
+  final int removedCount;
+}
+
 class Office365MailService {
   Office365MailService(this.ref);
 
@@ -233,24 +245,21 @@ class Office365MailService {
       final parsed = _parseLatestMessage(entry);
       if (parsed == null) continue;
 
-      final hydrated = await _hydrateMessageBody(
-        parsed,
-        token: token,
-        fallbackPayload: entry,
-      );
-
-      await _persistInboxMessage(hydrated);
-      results.add(hydrated);
+      await _persistInboxMessage(parsed);
+      results.add(parsed);
     }
 
     return results;
   }
 
   Future<int> syncLatestInboxMessages({bool silentWhenNotReady = true}) async {
-    return syncInboxDelta(silentWhenNotReady: silentWhenNotReady);
+    final result = await syncInboxDelta(silentWhenNotReady: silentWhenNotReady);
+    return result.newCount;
   }
 
-  Future<int> syncInboxDelta({bool silentWhenNotReady = true}) async {
+  Future<OutlookSyncResult> syncInboxDelta({
+    bool silentWhenNotReady = true,
+  }) async {
     try {
       final token = await _ensureValidAccessToken();
       final db = ref.read(appDatabaseProvider);
@@ -265,11 +274,15 @@ class Office365MailService {
       );
 
       String? nextUrl = currentState?.remoteCursor?.trim();
-      if (nextUrl == null || nextUrl.isEmpty) {
+      final isFullRefresh = nextUrl == null || nextUrl.isEmpty;
+      if (isFullRefresh) {
         nextUrl = _deltaSeedUrl();
       }
 
       var newCount = 0;
+      var scannedCount = 0;
+      var removedCount = 0;
+      final scannedExternalIds = isFullRefresh ? <String>{} : null;
       DateTime? latestReceivedAt;
       String? latestExternalId;
       String? deltaCursor;
@@ -292,29 +305,26 @@ class Office365MailService {
               final removedId = entry['id'] as String?;
               if (removedId != null && removedId.trim().isNotEmpty) {
                 await _markMessageDeletedByExternalId(removedId);
+                removedCount++;
               }
               continue;
             }
 
             final parsed = _parseLatestMessage(entry);
             if (parsed == null) continue;
+            scannedCount++;
+            scannedExternalIds?.add(parsed.id);
 
-            final hydrated = await _hydrateMessageBody(
-              parsed,
-              token: token,
-              fallbackPayload: entry,
-            );
-
-            final existed = await _messageExists(externalId: hydrated.id);
-            await _persistInboxMessage(hydrated);
+            final existed = await _messageExists(externalId: parsed.id);
+            await _persistInboxMessage(parsed);
             if (!existed) {
               newCount++;
             }
 
             if (latestReceivedAt == null ||
-                hydrated.receivedAt.isAfter(latestReceivedAt)) {
-              latestReceivedAt = hydrated.receivedAt;
-              latestExternalId = hydrated.id;
+                parsed.receivedAt.isAfter(latestReceivedAt)) {
+              latestReceivedAt = parsed.receivedAt;
+              latestExternalId = parsed.id;
             }
           }
         }
@@ -333,6 +343,17 @@ class Office365MailService {
         nextUrl = null;
       }
 
+      // On a full refresh there are no @removed entries from the delta API, so
+      // reconcile manually: delete any local inbox rows not seen in this scan.
+      if (isFullRefresh && scannedExternalIds != null) {
+        final staleCount = await db.messagesDao.deleteStaleMessages(
+          source: _kOffice365Source,
+          mailbox: 'inbox',
+          activeExternalIds: scannedExternalIds,
+        );
+        removedCount += staleCount;
+      }
+
       await db.syncStateDao.markSuccess(
         source: _kOffice365Source,
         scope: 'inbox',
@@ -341,10 +362,18 @@ class Office365MailService {
         highWaterReceivedAt: latestReceivedAt,
       );
 
-      return newCount;
+      return OutlookSyncResult(
+        scannedCount: scannedCount,
+        newCount: newCount,
+        removedCount: removedCount,
+      );
     } catch (error) {
       if (silentWhenNotReady) {
-        return 0;
+        return const OutlookSyncResult(
+          scannedCount: 0,
+          newCount: 0,
+          removedCount: 0,
+        );
       }
 
       final db = ref.read(appDatabaseProvider);
@@ -681,7 +710,7 @@ class Office365MailService {
     final uri = Uri.parse(
       'https://graph.microsoft.com/v1.0/me/messages'
       '?\$top=$effectiveTop&\$orderby=receivedDateTime%20desc'
-      '&\$select=id,subject,receivedDateTime,bodyPreview,body,isRead,hasAttachments,from',
+      '&\$select=id,subject,receivedDateTime,bodyPreview,isRead,hasAttachments,from',
     );
 
     return _getJson(
@@ -695,7 +724,7 @@ class Office365MailService {
 
   String _deltaSeedUrl() {
     return 'https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages/delta'
-        '?\$select=id,subject,receivedDateTime,bodyPreview,body,isRead,hasAttachments,from';
+        '?\$select=id,subject,receivedDateTime,bodyPreview,isRead,hasAttachments,from';
   }
 
   OutlookLatestMessage? _parseLatestMessage(Map<String, dynamic> raw) {
@@ -727,43 +756,6 @@ class Office365MailService {
       bodyRaw: bodyRaw,
       bodyFormat: bodyFormat,
     );
-  }
-
-  Future<OutlookLatestMessage> _hydrateMessageBody(
-    OutlookLatestMessage message, {
-    required String token,
-    Map<String, dynamic>? fallbackPayload,
-  }) async {
-    final rawBody = message.bodyRaw?.trim() ?? '';
-    if (rawBody.isNotEmpty) {
-      return message;
-    }
-
-    final encodedId = Uri.encodeComponent(message.id);
-    final uri = Uri.parse(
-      'https://graph.microsoft.com/v1.0/me/messages/$encodedId'
-      '?\$select=id,subject,receivedDateTime,bodyPreview,body,isRead,hasAttachments,from',
-    );
-
-    try {
-      final detail = await _getJson(
-        uri,
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Prefer': 'outlook.body-content-type="html"',
-        },
-      );
-      final parsed = _parseLatestMessage(detail);
-      return parsed ?? message;
-    } catch (_) {
-      if (fallbackPayload != null) {
-        final parsedFallback = _parseLatestMessage(fallbackPayload);
-        if (parsedFallback != null) {
-          return parsedFallback;
-        }
-      }
-      return message;
-    }
   }
 
   List<Map<String, dynamic>> _extractAttachmentPayloads(
@@ -1235,20 +1227,20 @@ class Office365PollingController extends Notifier<int> {
   Future<void> _syncOnce({required bool isStartup}) async {
     final status = ref.read(statusProvider.notifier);
     try {
-      final newCount = await ref
+      final result = await ref
           .read(office365MailServiceProvider)
           .syncInboxDelta(silentWhenNotReady: true);
 
       if (isStartup) {
         status.add(
           StatusEntryType.info,
-          'Outlook startup delta sync completed.',
+          'Outlook startup sync: ${result.scannedCount} headers scanned · ${result.newCount} new · ${result.removedCount} removed.',
         );
-      } else if (newCount > 0) {
-        final messageWord = newCount == 1 ? 'message' : 'messages';
+      } else if (result.newCount > 0 || result.removedCount > 0) {
+        final messageWord = result.newCount == 1 ? 'message' : 'messages';
         status.add(
           StatusEntryType.info,
-          'Outlook poll: $newCount new $messageWord.',
+          'Outlook poll: ${result.scannedCount} headers scanned · ${result.newCount} new $messageWord · ${result.removedCount} removed.',
         );
       }
     } catch (error) {

@@ -1,0 +1,13 @@
+{
+    "servers": {
+        "smartschool-researcher": {
+            "type": "stdio",
+            "command": "dart",
+            "args": [
+                "run",
+                "bin/server.dart"
+            ],
+            "cwd": "${workspaceFolder}/smartschool-researcher-mcp"
+        }
+    }
+}

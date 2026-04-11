@@ -150,6 +150,19 @@ class SmartschoolSyncRepository {
     return newCount;
   }
 
+  /// Delete local headers for [mailbox] whose external ID is not among
+  /// [activeIds] (i.e. they no longer exist on Smartschool).
+  ///
+  /// Returns the number of deleted rows.
+  Future<int> deleteStaleHeaders({
+    required String mailbox,
+    required Set<String> activeIds,
+  }) => _db.messagesDao.deleteStaleMessages(
+    source: _kSource,
+    mailbox: mailbox,
+    activeExternalIds: activeIds,
+  );
+
   /// Persist the full body detail for a message.
   ///
   /// Also resolves all participant roles (to, cc, bcc) from the detail payload
@@ -178,10 +191,11 @@ class SmartschoolSyncRepository {
     // Build participant list from detail (sender + all recipient groups).
     final participants = <MessageParticipantsCompanion>[];
     int pos = 0;
+    final senderAvatarUrl = _resolveDetailSenderAvatar(existing, detail);
 
     final senderId = await _resolveSenderStub(
       displayName: detail.from,
-      avatarUrl: detail.senderPicture,
+      avatarUrl: senderAvatarUrl,
     );
 
     participants.add(
@@ -362,6 +376,29 @@ class SmartschoolSyncRepository {
     }
     if (raw is String && raw.isNotEmpty) return [raw];
     return [];
+  }
+
+  String? _resolveDetailSenderAvatar(Message existing, SmartschoolMessageDetail d) {
+    final fromHeader = _extractHeaderAvatarUrl(existing.rawHeaderJson);
+    if (_isValidAvatarUrl(fromHeader)) return fromHeader;
+    if (_isValidAvatarUrl(d.senderPicture)) return d.senderPicture;
+    return null;
+  }
+
+  String? _extractHeaderAvatarUrl(String? rawHeaderJson) {
+    if (rawHeaderJson == null || rawHeaderJson.trim().isEmpty) return null;
+    try {
+      final decoded = jsonDecode(rawHeaderJson);
+      if (decoded is! Map<String, dynamic>) return null;
+      return decoded['from_image'] as String?;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  bool _isValidAvatarUrl(String? value) {
+    if (value == null || value.isEmpty) return false;
+    return value.startsWith('http://') || value.startsWith('https://');
   }
 
   Map<String, dynamic> _headerToMap(SmartschoolMessageHeader h) => {
