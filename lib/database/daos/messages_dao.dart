@@ -168,7 +168,23 @@ class MessagesDao extends DatabaseAccessor<AppDatabase>
       SELECT
         mp.contact_id AS contact_id,
         COALESCE(c.display_name, MAX(mp.display_name_snapshot), '') AS display_name,
-        c.primary_avatar_url AS avatar_url,
+        CASE
+          WHEN EXISTS (
+            SELECT 1
+            FROM contact_identities ci_any
+            WHERE ci_any.contact_id = mp.contact_id
+          ) THEN (
+            SELECT ci.avatar_url_snapshot
+            FROM contact_identities ci
+            WHERE
+              ci.contact_id = mp.contact_id AND
+              ci.avatar_url_snapshot IS NOT NULL AND
+              TRIM(ci.avatar_url_snapshot) <> ''
+            ORDER BY COALESCE(ci.last_seen_at, ci.updated_at) DESC
+            LIMIT 1
+          )
+          ELSE c.primary_avatar_url
+        END AS avatar_url,
         MAX(COALESCE(m.sent_at, m.received_at)) AS latest_activity_at,
         COUNT(DISTINCT m.id) AS item_count,
         SUM(CASE WHEN m.is_read = 0 THEN 1 ELSE 0 END) AS unread_count
@@ -185,7 +201,7 @@ class MessagesDao extends DatabaseAccessor<AppDatabase>
       ORDER BY latest_activity_at DESC, display_name COLLATE NOCASE ASC
       ''',
       variables: variables,
-      readsFrom: {messages, messageParticipants},
+      readsFrom: {messages, messageParticipants, contacts, contactIdentities},
     ).get();
 
     return rows.map((row) {

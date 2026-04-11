@@ -102,9 +102,13 @@ class SmartschoolSyncRepository {
         });
 
         // Resolve the sender as a stub contact identity.
+        // Smartschool sent headers expose recipient name in `from` but keep
+        // the current-user avatar in `fromImage`. Do not attach that image to
+        // the recipient contact identity.
+        final headerAvatar = mailbox == 'sent' ? null : header.fromImage;
         final senderId = await _resolveSenderStub(
           displayName: header.from,
-          avatarUrl: header.fromImage,
+          avatarUrl: headerAvatar,
         );
 
         await _db.messagesDao.replaceParticipants(localId, [

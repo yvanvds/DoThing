@@ -329,10 +329,14 @@ class SmartschoolMessageCacheController
     SmartschoolMessageHeader? fallbackHeaderFromDb,
   }) {
     final header = fallbackHeader ?? fallbackHeaderFromDb;
+    final isSent = _isSentMailbox(header?.realBox);
     final fallbackSubject = header?.subject ?? '';
-    final fallbackFrom = header?.from ?? '';
+
+    // For sent messages header.from is the RECIPIENT, not the sender.
+    // Using it as a sender fallback would show the wrong name.
+    final fallbackFrom = isSent ? '' : (header?.from ?? '');
     final fallbackAvatar =
-        (header != null && header.fromImage.trim().isNotEmpty)
+        (!isSent && header != null && header.fromImage.trim().isNotEmpty)
         ? header.fromImage
         : null;
 
@@ -340,20 +344,43 @@ class SmartschoolMessageCacheController
       detail.subject,
       fallbackSubject,
     );
-    final normalizedFrom = _preferFallbackSender(detail.from, fallbackFrom);
+    // For sent messages keep a friendly sender label instead of the recipient name.
+    final normalizedFrom = isSent
+      ? _preferSentSender(detail.from)
+      : _preferFallbackSender(detail.from, fallbackFrom);
+
+    // Fall back to header date when the API returns epoch/bad date.
+    final normalizedDate = _preferFallbackDate(detail.date, header?.date);
+
+    // For sent messages with empty body the API simply does not return content.
+    // Persist an informative placeholder so repeated opens don't re-fetch.
+    final normalizedBody = detail.body.isNotEmpty
+        ? detail.body
+        : isSent
+            ? '<p><em>Berichtinhoud is niet beschikbaar voor berichten in de '
+                'verzonden map via de Smartschool API.</em></p>'
+            : detail.body;
+
+    // For sent messages the API returns no recipients.
+    // Use header.from (the correspondent) as the primary To recipient.
+    final normalizedReceivers = _normalizeSentReceivers(
+      detail.receivers,
+      isSent: isSent,
+      headerFrom: header?.from,
+    );
 
     return SmartschoolMessageDetail(
       id: detail.id,
       from: normalizedFrom,
       subject: normalizedSubject,
-      body: detail.body,
-      date: detail.date,
+      body: normalizedBody,
+      date: normalizedDate,
       to: detail.to,
       status: detail.status,
       attachment: detail.attachment,
       unread: detail.unread,
       label: detail.label,
-      receivers: detail.receivers,
+      receivers: normalizedReceivers,
       ccReceivers: detail.ccReceivers,
       bccReceivers: detail.bccReceivers,
       senderPicture: detail.senderPicture ?? fallbackAvatar,
@@ -366,6 +393,47 @@ class SmartschoolMessageCacheController
       hasForward: detail.hasForward,
       sendDate: detail.sendDate,
     );
+  }
+
+  /// True when [realBox] indicates an outbox / sent mailbox.
+  bool _isSentMailbox(String? realBox) {
+    if (realBox == null) return false;
+    final n = realBox.toLowerCase().trim();
+    return n == 'sent' || n == 'outbox';
+  }
+
+  /// Sent-message detail payloads can omit sender; show a stable local label.
+  String _preferSentSender(String candidate) {
+    final c = candidate.trim();
+    if (c.isEmpty || _isUnavailableSender(c)) {
+      return 'You';
+    }
+    return candidate;
+  }
+
+  /// Returns [detailDate] unless it looks like epoch / year < 2000.
+  /// Falls back to [fallbackDate] when available.
+  String _preferFallbackDate(String detailDate, String? fallbackDate) {
+    if (fallbackDate == null) return detailDate;
+    final dt = DateTime.tryParse(detailDate);
+    if (dt == null || dt.year < 2000) {
+      return fallbackDate;
+    }
+    return detailDate;
+  }
+
+  /// For sent messages with no recipients, inject [headerFrom] as the sole To.
+  dynamic _normalizeSentReceivers(
+    dynamic receivers,
+    {required bool isSent, String? headerFrom}) {
+    if (!isSent) return receivers;
+    final isEmpty = receivers == null ||
+        (receivers is List && receivers.isEmpty) ||
+        (receivers is String && receivers.trim().isEmpty);
+    if (isEmpty && headerFrom != null && headerFrom.isNotEmpty) {
+      return <String>[headerFrom];
+    }
+    return receivers;
   }
 
   String _preferFallbackSubject(String candidate, String fallback) {

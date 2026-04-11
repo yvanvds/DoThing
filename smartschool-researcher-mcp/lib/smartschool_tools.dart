@@ -40,6 +40,12 @@ class SmartschoolTools {
               'type': 'integer',
               'description': 'The ID of the message to retrieve',
             },
+            'box_type': {
+              'type': 'string',
+              'description':
+                  'The mailbox type: inbox (default), sent, trash, draft, scheduled',
+              'enum': ['inbox', 'sent', 'trash', 'draft', 'scheduled'],
+            },
           },
           'required': ['message_id'],
         },
@@ -168,8 +174,20 @@ class SmartschoolTools {
         return jsonEncode({'error': 'message_id must be an integer'});
       }
 
+      final boxTypeStr = params['box_type'] as String? ?? 'inbox';
+      final boxType = switch (boxTypeStr) {
+        'sent' => BoxType.sent,
+        'trash' => BoxType.trash,
+        'draft' => BoxType.draft,
+        'scheduled' => BoxType.scheduled,
+        _ => BoxType.inbox,
+      };
+
       final messagesService = MessagesService(_client);
-      final message = await messagesService.getMessage(messageId);
+      final message = await messagesService.getMessage(
+        messageId,
+        boxType: boxType,
+      );
 
       if (message == null) {
         return jsonEncode({
@@ -182,7 +200,10 @@ class SmartschoolTools {
       final attachmentsList = <Map<String, dynamic>>[];
       if (message.attachment > 0) {
         try {
-          final attachments = await messagesService.getAttachments(messageId);
+          final attachments = await messagesService.getAttachments(
+            messageId,
+            boxType: boxType,
+          );
           attachmentsList.addAll(
             attachments.map((a) {
               return {
