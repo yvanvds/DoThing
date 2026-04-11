@@ -346,8 +346,8 @@ class SmartschoolMessageCacheController
     );
     // For sent messages keep a friendly sender label instead of the recipient name.
     final normalizedFrom = isSent
-      ? _preferSentSender(detail.from)
-      : _preferFallbackSender(detail.from, fallbackFrom);
+        ? _preferSentSender(detail.from)
+        : _preferFallbackSender(detail.from, fallbackFrom);
 
     // Fall back to header date when the API returns epoch/bad date.
     final normalizedDate = _preferFallbackDate(detail.date, header?.date);
@@ -357,9 +357,9 @@ class SmartschoolMessageCacheController
     final normalizedBody = detail.body.isNotEmpty
         ? detail.body
         : isSent
-            ? '<p><em>Berichtinhoud is niet beschikbaar voor berichten in de '
-                'verzonden map via de Smartschool API.</em></p>'
-            : detail.body;
+        ? '<p><em>Berichtinhoud is niet beschikbaar voor berichten in de '
+              'verzonden map via de Smartschool API.</em></p>'
+        : detail.body;
 
     // For sent messages the API returns no recipients.
     // Use header.from (the correspondent) as the primary To recipient.
@@ -424,10 +424,13 @@ class SmartschoolMessageCacheController
 
   /// For sent messages with no recipients, inject [headerFrom] as the sole To.
   dynamic _normalizeSentReceivers(
-    dynamic receivers,
-    {required bool isSent, String? headerFrom}) {
+    dynamic receivers, {
+    required bool isSent,
+    String? headerFrom,
+  }) {
     if (!isSent) return receivers;
-    final isEmpty = receivers == null ||
+    final isEmpty =
+        receivers == null ||
         (receivers is List && receivers.isEmpty) ||
         (receivers is String && receivers.trim().isEmpty);
     if (isEmpty && headerFrom != null && headerFrom.isNotEmpty) {
