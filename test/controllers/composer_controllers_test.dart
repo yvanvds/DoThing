@@ -3,6 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:do_thing/controllers/composer_controller.dart';
 import 'package:do_thing/controllers/composer_visibility_controller.dart';
 import 'package:do_thing/models/draft_message.dart';
+import 'package:do_thing/models/recipients/recipient_chip.dart';
+import 'package:do_thing/models/recipients/recipient_chip_source.dart';
+import 'package:do_thing/models/recipients/recipient_endpoint.dart';
+import 'package:do_thing/models/recipients/recipient_endpoint_kind.dart';
+import 'package:do_thing/models/recipients/recipient_endpoint_label.dart';
 
 void main() {
   group('ComposerController', () {
@@ -30,6 +35,32 @@ void main() {
         'alice@example.com',
         'bob@example.com',
       ]);
+    });
+
+    test('updateToRecipients stores deterministic endpoint chips', () {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+
+      container.read(composerProvider.notifier).updateToRecipients([
+        const RecipientChip(
+          displayName: 'Jan Peeters',
+          endpoint: RecipientEndpoint(
+            kind: RecipientEndpointKind.smartschool,
+            value: 'ss-jan',
+            label: RecipientEndpointLabel.smartschool,
+          ),
+          source: RecipientChipSource.local,
+          autoSelectedPreferred: true,
+        ),
+      ]);
+
+      final draft = container.read(composerProvider);
+      expect(draft.toRecipients, hasLength(1));
+      expect(
+        draft.toRecipients.first.endpoint.kind,
+        RecipientEndpointKind.smartschool,
+      );
+      expect(draft.toRecipients.first.endpoint.value, 'ss-jan');
     });
 
     test('updateCc and updateBcc update their respective fields', () {
@@ -75,7 +106,7 @@ void main() {
       final draft = container.read(composerProvider);
       expect(draft.to, isEmpty);
       expect(draft.subject, '');
-      expect(draft.body, const DraftMessage().body);
+      expect(draft.body, DraftMessage().body);
     });
 
     test('updates to individual fields do not affect other fields', () {

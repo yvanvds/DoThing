@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../controllers/composer_controller.dart';
+import 'recipient_field.dart';
 
 /// Header fields for the message composer: To, CC, BCC, Subject.
 ///
@@ -15,9 +16,6 @@ class ComposerHeader extends ConsumerStatefulWidget {
 }
 
 class _ComposerHeaderState extends ConsumerState<ComposerHeader> {
-  late final TextEditingController _toCtrl;
-  late final TextEditingController _ccCtrl;
-  late final TextEditingController _bccCtrl;
   late final TextEditingController _subjectCtrl;
 
   late final FocusNode _toFocus;
@@ -29,9 +27,6 @@ class _ComposerHeaderState extends ConsumerState<ComposerHeader> {
   void initState() {
     super.initState();
     final draft = ref.read(composerProvider);
-    _toCtrl = TextEditingController(text: draft.to.join(', '));
-    _ccCtrl = TextEditingController(text: draft.cc.join(', '));
-    _bccCtrl = TextEditingController(text: draft.bcc.join(', '));
     _subjectCtrl = TextEditingController(text: draft.subject);
 
     _toFocus = FocusNode();
@@ -39,40 +34,14 @@ class _ComposerHeaderState extends ConsumerState<ComposerHeader> {
     _bccFocus = FocusNode();
     _subjectFocus = FocusNode();
 
-    _toCtrl.addListener(
-      () => ref
-          .read(composerProvider.notifier)
-          .updateTo(_splitAddresses(_toCtrl.text)),
-    );
-    _ccCtrl.addListener(
-      () => ref
-          .read(composerProvider.notifier)
-          .updateCc(_splitAddresses(_ccCtrl.text)),
-    );
-    _bccCtrl.addListener(
-      () => ref
-          .read(composerProvider.notifier)
-          .updateBcc(_splitAddresses(_bccCtrl.text)),
-    );
     _subjectCtrl.addListener(
       () =>
           ref.read(composerProvider.notifier).updateSubject(_subjectCtrl.text),
     );
   }
 
-  List<String> _splitAddresses(String raw) {
-    return raw
-        .split(RegExp(r'[,;]'))
-        .map((s) => s.trim())
-        .where((s) => s.isNotEmpty)
-        .toList();
-  }
-
   @override
   void dispose() {
-    _toCtrl.dispose();
-    _ccCtrl.dispose();
-    _bccCtrl.dispose();
     _subjectCtrl.dispose();
     _toFocus.dispose();
     _ccFocus.dispose();
@@ -83,17 +52,33 @@ class _ComposerHeaderState extends ConsumerState<ComposerHeader> {
 
   @override
   Widget build(BuildContext context) {
+    final draft = ref.watch(composerProvider);
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _HeaderField(
+        RecipientField(
           label: 'To',
-          controller: _toCtrl,
+          chips: draft.toRecipients,
+          onChanged: (chips) =>
+              ref.read(composerProvider.notifier).updateToRecipients(chips),
           focusNode: _toFocus,
           autofocus: true,
         ),
-        _HeaderField(label: 'CC', controller: _ccCtrl, focusNode: _ccFocus),
-        _HeaderField(label: 'BCC', controller: _bccCtrl, focusNode: _bccFocus),
+        RecipientField(
+          label: 'CC',
+          chips: draft.ccRecipients,
+          onChanged: (chips) =>
+              ref.read(composerProvider.notifier).updateCcRecipients(chips),
+          focusNode: _ccFocus,
+        ),
+        RecipientField(
+          label: 'BCC',
+          chips: draft.bccRecipients,
+          onChanged: (chips) =>
+              ref.read(composerProvider.notifier).updateBccRecipients(chips),
+          focusNode: _bccFocus,
+        ),
         _HeaderField(
           label: 'Subject',
           controller: _subjectCtrl,
@@ -109,13 +94,11 @@ class _HeaderField extends StatefulWidget {
     required this.label,
     required this.controller,
     required this.focusNode,
-    this.autofocus = false,
   });
 
   final String label;
   final TextEditingController controller;
   final FocusNode focusNode;
-  final bool autofocus;
 
   @override
   State<_HeaderField> createState() => _HeaderFieldState();
@@ -175,7 +158,6 @@ class _HeaderFieldState extends State<_HeaderField> {
             child: TextField(
               controller: widget.controller,
               focusNode: widget.focusNode,
-              autofocus: widget.autofocus,
               decoration: const InputDecoration(
                 border: InputBorder.none,
                 isDense: true,
