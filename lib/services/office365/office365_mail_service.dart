@@ -20,6 +20,45 @@ const _kMicrosoftLoginHost = 'login.microsoftonline.com';
 const _kOutlookBodyContentTypeHeader = 'outlook.body-content-type="html"';
 const _kOutlookMessageNotFound = 'Outlook message not found in local database.';
 
+class Office365MailServiceUtils {
+  static String normalizedScopes(String rawScopes) {
+    final scopes = rawScopes
+        .split(RegExp(r'\s+'))
+        .map((scope) => scope.trim())
+        .where((scope) => scope.isNotEmpty)
+        .toSet();
+
+    scopes.add('offline_access');
+    scopes.add('Mail.Read');
+    scopes.add('openid');
+    scopes.add('profile');
+
+    return scopes.join(' ');
+  }
+
+  static String pkceChallenge(String verifier) {
+    final bytes = utf8.encode(verifier);
+    final digest = sha256.convert(bytes).bytes;
+    return base64UrlEncode(digest).replaceAll('=', '');
+  }
+
+  static String toPlainText(String raw, {required String bodyFormat}) {
+    final normalized = bodyFormat.toLowerCase();
+    if (!normalized.contains('html')) {
+      return raw;
+    }
+
+    return raw
+        .replaceAll(RegExp(r'<[^>]*>'), ' ')
+        .replaceAll('&nbsp;', ' ')
+        .replaceAll('&amp;', '&')
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+}
+
 class _InboxDeltaStart {
   const _InboxDeltaStart({required this.nextUrl, required this.isFullRefresh});
 
@@ -1147,18 +1186,7 @@ class Office365MailService {
   }
 
   String _normalizedScopes(String rawScopes) {
-    final scopes = rawScopes
-        .split(RegExp(r'\s+'))
-        .map((scope) => scope.trim())
-        .where((scope) => scope.isNotEmpty)
-        .toSet();
-
-    scopes.add('offline_access');
-    scopes.add('Mail.Read');
-    scopes.add('openid');
-    scopes.add('profile');
-
-    return scopes.join(' ');
+    return Office365MailServiceUtils.normalizedScopes(rawScopes);
   }
 
   String _randomUrlSafe(int length) {
@@ -1175,25 +1203,11 @@ class Office365MailService {
   }
 
   String _pkceChallenge(String verifier) {
-    final bytes = utf8.encode(verifier);
-    final digest = sha256.convert(bytes).bytes;
-    return base64UrlEncode(digest).replaceAll('=', '');
+    return Office365MailServiceUtils.pkceChallenge(verifier);
   }
 
   String _toPlainText(String raw, {required String bodyFormat}) {
-    final normalized = bodyFormat.toLowerCase();
-    if (!normalized.contains('html')) {
-      return raw;
-    }
-
-    return raw
-        .replaceAll(RegExp(r'<[^>]*>'), ' ')
-        .replaceAll('&nbsp;', ' ')
-        .replaceAll('&amp;', '&')
-        .replaceAll('&lt;', '<')
-        .replaceAll('&gt;', '>')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
+    return Office365MailServiceUtils.toPlainText(raw, bodyFormat: bodyFormat);
   }
 }
 

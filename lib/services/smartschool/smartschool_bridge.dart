@@ -110,14 +110,18 @@ class SmartschoolBridge {
 
     final grouped = <String, List<SmartschoolMessageHeader>>{};
     for (final header in headers) {
-      final key = _normalizeSubject(header.subject);
+      final key = normalizeSubjectForThreading(header.subject);
       grouped.putIfAbsent(key, () => []).add(header);
     }
 
     final threads =
         grouped.entries.map((entry) {
           final messages = [...entry.value]
-            ..sort((a, b) => _parseIso(b.date).compareTo(_parseIso(a.date)));
+            ..sort(
+              (a, b) => parseIsoForSorting(
+                b.date,
+              ).compareTo(parseIsoForSorting(a.date)),
+            );
           final latest = messages.first;
           return SmartschoolMessageThread(
             threadKey: entry.key,
@@ -129,7 +133,9 @@ class SmartschoolBridge {
             messages: messages,
           );
         }).toList()..sort(
-          (a, b) => _parseIso(b.latestDate).compareTo(_parseIso(a.latestDate)),
+          (a, b) => parseIsoForSorting(
+            b.latestDate,
+          ).compareTo(parseIsoForSorting(a.latestDate)),
         );
 
     return threads;
@@ -160,7 +166,7 @@ class SmartschoolBridge {
             (a) => SmartschoolAttachment(
               index: a.fileId,
               name: a.name,
-              size: _parseSizeBytes(a.size),
+              size: parseAttachmentSizeBytes(a.size),
               sizeLabel: a.size,
             ),
           )
@@ -186,7 +192,7 @@ class SmartschoolBridge {
       return SmartschoolAttachment(
         index: selected.fileId,
         name: selected.name,
-        size: _parseSizeBytes(selected.size),
+        size: parseAttachmentSizeBytes(selected.size),
         sizeLabel: selected.size,
         contentBase64: base64Encode(bytes),
       );
@@ -316,7 +322,7 @@ class SmartschoolBridge {
     );
   }
 
-  static String _normalizeSubject(String subject) {
+  static String normalizeSubjectForThreading(String subject) {
     final trimmed = subject.trim();
     if (trimmed.isEmpty) return '(no subject)';
     final stripped = trimmed.replaceFirst(
@@ -329,11 +335,11 @@ class SmartschoolBridge {
     return (stripped.isEmpty ? trimmed : stripped).toLowerCase();
   }
 
-  static DateTime _parseIso(String value) =>
+  static DateTime parseIsoForSorting(String value) =>
       DateTime.tryParse(value)?.toUtc() ??
       DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
 
-  static int _parseSizeBytes(String raw) {
+  static int parseAttachmentSizeBytes(String raw) {
     final input = raw.trim();
     if (input.isEmpty) return 0;
 

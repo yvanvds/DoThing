@@ -47,6 +47,30 @@ SmartschoolMessageHeader _header({
 }
 
 void main() {
+  testWidgets('shows empty state when there are no contacts', (tester) async {
+    final container = ProviderContainer(
+      overrides: [
+        smartschoolInboxProvider.overrideWith(
+          () => _FakeInboxController(const []),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(
+          home: Scaffold(body: SmartschoolMessageList()),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(find.text('No people yet'), findsOneWidget);
+  });
+
   testWidgets('filters contacts by case-insensitive contains', (tester) async {
     final contacts = [
       SmartschoolContactInbox(
@@ -194,5 +218,54 @@ void main() {
 
     expect(find.text('Subject 1'), findsNothing);
     expect(find.text('Subject 2'), findsOneWidget);
+  });
+
+  testWidgets('shows no matching people when query filters out all contacts', (
+    tester,
+  ) async {
+    final contacts = [
+      SmartschoolContactInbox(
+        contactId: 1,
+        displayName: 'Alice',
+        avatarUrl: null,
+        latestActivityAt: DateTime.parse('2026-04-10T11:00:00Z'),
+        unreadCount: 0,
+        items: [
+          SmartschoolRelatedItem(
+            type: SmartschoolRelatedItemType.message,
+            activityAt: DateTime.parse('2026-04-10T11:00:00Z'),
+            messageHeader: _header(
+              id: 1,
+              from: 'Alice',
+              date: '2026-04-10T11:00:00Z',
+            ),
+          ),
+        ],
+      ),
+    ];
+
+    final container = ProviderContainer(
+      overrides: [
+        smartschoolInboxProvider.overrideWith(
+          () => _FakeInboxController(contacts),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(
+          home: Scaffold(body: SmartschoolMessageList()),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'zzz');
+    await tester.pumpAndSettle();
+
+    expect(find.text('No matching people'), findsOneWidget);
   });
 }
