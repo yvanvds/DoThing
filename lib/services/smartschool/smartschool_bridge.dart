@@ -2,7 +2,8 @@ import 'dart:convert';
 
 import 'package:flutter_smartschool/flutter_smartschool.dart';
 
-import '../models/smartschool_message.dart';
+import '../../models/smartschool_message.dart';
+import 'smartschool_bridge_exception.dart';
 
 /// Compatibility bridge that adapts `flutter_smartschool` to the app's
 /// existing Smartschool DTOs and controller contracts.
@@ -356,12 +357,4 @@ class SmartschoolBridge {
     };
     return (value * multiplier).round();
   }
-}
-
-class SmartschoolBridgeException implements Exception {
-  SmartschoolBridgeException(this.message);
-  final String message;
-
-  @override
-  String toString() => 'SmartschoolBridgeException: $message';
 }

@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:do_thing/controllers/smartschool_settings_controller.dart';
 import 'package:do_thing/controllers/status_controller.dart';
 import 'package:do_thing/models/smartschool_settings.dart';
-import 'package:do_thing/services/smartschool_auth_service.dart';
+import 'package:do_thing/services/smartschool/smartschool_auth_controller.dart';
 
 class _FakeSettingsController extends SmartschoolSettingsController {
   _FakeSettingsController(this._settings);

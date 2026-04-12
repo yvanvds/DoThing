@@ -8,78 +8,17 @@ import 'package:drift/drift.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../controllers/office365_settings_controller.dart';
-import '../controllers/status_controller.dart';
-import '../models/office365_settings.dart';
-import '../providers/database_provider.dart';
+import '../../controllers/office365_settings_controller.dart';
+import '../../controllers/status_controller.dart';
+import '../../models/office365_settings.dart';
+import '../../providers/database_provider.dart';
+import '../downloads_file_store.dart';
+import 'outlook_models.dart';
 
 const _kOffice365Source = 'outlook';
 const _kMicrosoftLoginHost = 'login.microsoftonline.com';
 const _kOutlookBodyContentTypeHeader = 'outlook.body-content-type="html"';
 const _kOutlookMessageNotFound = 'Outlook message not found in local database.';
-
-class OutlookLatestMessage {
-  const OutlookLatestMessage({
-    required this.id,
-    required this.subject,
-    required this.senderName,
-    required this.senderAddress,
-    required this.receivedAt,
-    required this.bodyPreview,
-    required this.isRead,
-    required this.hasAttachments,
-    this.bodyRaw,
-    this.bodyFormat,
-  });
-
-  final String id;
-  final String subject;
-  final String senderName;
-  final String senderAddress;
-  final DateTime receivedAt;
-  final String bodyPreview;
-  final bool isRead;
-  final bool hasAttachments;
-  final String? bodyRaw;
-  final String? bodyFormat;
-
-  OutlookLatestMessage copyWith({
-    String? subject,
-    String? senderName,
-    String? senderAddress,
-    DateTime? receivedAt,
-    String? bodyPreview,
-    bool? isRead,
-    bool? hasAttachments,
-    String? bodyRaw,
-    String? bodyFormat,
-  }) {
-    return OutlookLatestMessage(
-      id: id,
-      subject: subject ?? this.subject,
-      senderName: senderName ?? this.senderName,
-      senderAddress: senderAddress ?? this.senderAddress,
-      receivedAt: receivedAt ?? this.receivedAt,
-      bodyPreview: bodyPreview ?? this.bodyPreview,
-      isRead: isRead ?? this.isRead,
-      hasAttachments: hasAttachments ?? this.hasAttachments,
-      bodyRaw: bodyRaw ?? this.bodyRaw,
-      bodyFormat: bodyFormat ?? this.bodyFormat,
-    );
-  }
-}
-
-class OutlookSyncResult {
-  const OutlookSyncResult({
-    required this.scannedCount,
-    required this.newCount,
-    required this.removedCount,
-  });
-
-  final int scannedCount;
-  final int newCount;
-  final int removedCount;
-}
 
 class _InboxDeltaStart {
   const _InboxDeltaStart({required this.nextUrl, required this.isFullRefresh});
@@ -637,7 +576,7 @@ class Office365MailService {
       final bytes = base64Decode(base64);
       final filename = (payload['name'] as String? ?? attachment.filename)
           .trim();
-      final file = await _saveToDownloads(
+      final file = await DownloadsFileStore.saveToDownloads(
         filename.isEmpty ? attachment.filename : filename,
         bytes,
       );
@@ -700,11 +639,11 @@ class Office365MailService {
       externalId: latest.id,
     );
 
-    final fullBody = latest.bodyRaw?.trim() ?? '';
+    final fullBody = latest.body.raw?.trim() ?? '';
     final hasFullBody = fullBody.isNotEmpty;
-    final effectiveBodyRaw = hasFullBody ? fullBody : latest.bodyPreview;
+    final effectiveBodyRaw = hasFullBody ? fullBody : latest.body.preview;
     final effectiveBodyFormat = hasFullBody
-        ? (latest.bodyFormat ?? 'html')
+        ? (latest.body.format ?? 'html')
         : 'plain';
     final effectiveBodyText = _toPlainText(
       effectiveBodyRaw,
@@ -754,12 +693,12 @@ class Office365MailService {
     });
 
     int? senderContactId;
-    final senderAddress = latest.senderAddress.trim().toLowerCase();
+    final senderAddress = latest.sender.address.trim().toLowerCase();
     if (senderAddress.isNotEmpty) {
       senderContactId = await db.contactsDao.upsertIdentity(
         source: _kOffice365Source,
         externalId: senderAddress,
-        displayName: latest.senderName,
+        displayName: latest.sender.name,
       );
     }
 
@@ -767,7 +706,7 @@ class Office365MailService {
       MessageParticipantsCompanion.insert(
         messageId: messageId,
         role: 'sender',
-        displayNameSnapshot: latest.senderName,
+        displayNameSnapshot: latest.sender.name,
         contactId: Value(senderContactId),
         addressSnapshot: Value(senderAddress.isEmpty ? null : senderAddress),
       ),
@@ -843,16 +782,20 @@ class Office365MailService {
     return OutlookLatestMessage(
       id: id,
       subject: raw['subject'] as String? ?? '(no subject)',
-      senderName: senderData['name'] as String? ?? 'Unknown sender',
-      senderAddress: senderData['address'] as String? ?? '',
+      sender: OutlookSenderInfo(
+        name: senderData['name'] as String? ?? 'Unknown sender',
+        address: senderData['address'] as String? ?? '',
+      ),
       receivedAt:
           DateTime.tryParse(raw['receivedDateTime'] as String? ?? '') ??
           DateTime.now(),
-      bodyPreview: raw['bodyPreview'] as String? ?? '',
+      body: OutlookBodyContent(
+        preview: raw['bodyPreview'] as String? ?? '',
+        raw: bodyRaw,
+        format: bodyFormat,
+      ),
       isRead: raw['isRead'] as bool? ?? false,
       hasAttachments: raw['hasAttachments'] as bool? ?? false,
-      bodyRaw: bodyRaw,
-      bodyFormat: bodyFormat,
     );
   }
 
@@ -1252,116 +1195,8 @@ class Office365MailService {
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
   }
-
-  Future<File> _saveToDownloads(String fileName, List<int> bytes) async {
-    final userProfile = Platform.environment['USERPROFILE'];
-    Directory targetDir;
-    if (userProfile != null && userProfile.isNotEmpty) {
-      final downloads = Directory('$userProfile\\Downloads');
-      if (await downloads.exists()) {
-        targetDir = downloads;
-      } else {
-        targetDir = Directory.current;
-      }
-    } else {
-      targetDir = Directory.current;
-    }
-
-    if (!await targetDir.exists()) {
-      await targetDir.create(recursive: true);
-    }
-
-    final uniquePath = _buildUniquePath(targetDir.path, fileName);
-    final file = File(uniquePath);
-    await file.writeAsBytes(bytes, flush: true);
-    return file;
-  }
-
-  String _buildUniquePath(String directoryPath, String fileName) {
-    final safeName = fileName.trim().isEmpty ? 'attachment.bin' : fileName;
-    final dotIndex = safeName.lastIndexOf('.');
-    final hasExtension = dotIndex > 0 && dotIndex < safeName.length - 1;
-    final baseName = hasExtension ? safeName.substring(0, dotIndex) : safeName;
-    final extension = hasExtension ? safeName.substring(dotIndex) : '';
-
-    var candidate = '$directoryPath${Platform.pathSeparator}$safeName';
-    var counter = 1;
-    while (File(candidate).existsSync()) {
-      candidate =
-          '$directoryPath${Platform.pathSeparator}$baseName ($counter)$extension';
-      counter++;
-    }
-    return candidate;
-  }
 }
 
 final office365MailServiceProvider = Provider<Office365MailService>(
   Office365MailService.new,
 );
-
-class Office365PollingController extends Notifier<int> {
-  Timer? _timer;
-  bool _started = false;
-
-  @override
-  int build() {
-    ref.onDispose(() {
-      _timer?.cancel();
-      _timer = null;
-      _started = false;
-    });
-    return 0;
-  }
-
-  void ensureStarted() {
-    if (_started) return;
-    _started = true;
-
-    Future<void>.microtask(() => _syncOnce(isStartup: true));
-
-    _timer = Timer.periodic(const Duration(minutes: 5), (_) {
-      _syncOnce(isStartup: false);
-    });
-  }
-
-  Future<void> _syncOnce({required bool isStartup}) async {
-    final status = ref.read(statusProvider.notifier);
-    try {
-      final result = await ref
-          .read(office365MailServiceProvider)
-          .syncInboxDelta(silentWhenNotReady: true);
-
-      if (isStartup) {
-        status.add(
-          StatusEntryType.info,
-          'Outlook startup sync: ${result.scannedCount} headers scanned · ${result.newCount} new · ${result.removedCount} removed.',
-        );
-      } else if (result.newCount > 0 || result.removedCount > 0) {
-        final messageWord = result.newCount == 1 ? 'message' : 'messages';
-        status.add(
-          StatusEntryType.info,
-          'Outlook poll: ${result.scannedCount} headers scanned · ${result.newCount} new $messageWord · ${result.removedCount} removed.',
-        );
-      }
-    } catch (error) {
-      if (!isStartup) {
-        status.add(StatusEntryType.warning, 'Outlook polling failed: $error');
-      }
-    } finally {
-      state = state + 1;
-    }
-  }
-}
-
-final office365PollingProvider =
-    NotifierProvider<Office365PollingController, int>(
-      Office365PollingController.new,
-    );
-
-final office365InboxSyncStateProvider = FutureProvider<SyncStateData?>((
-  ref,
-) async {
-  ref.watch(office365PollingProvider);
-  final db = ref.watch(appDatabaseProvider);
-  return db.syncStateDao.getState(source: _kOffice365Source, scope: 'inbox');
-});

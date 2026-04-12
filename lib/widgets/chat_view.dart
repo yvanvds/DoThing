@@ -19,7 +19,7 @@ class ChatView extends ConsumerWidget {
       onMessageSend: (text) => _handleSend(text, chatController),
       theme: ChatTheme.fromThemeData(Theme.of(context)),
       builders: Builders(
-        composerBuilder: (context) => Composer(sendOnEnter: true),
+        composerBuilder: (context) => const Composer(sendOnEnter: true),
       ),
       timeFormat: DateFormat(''),
     );

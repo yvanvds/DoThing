@@ -6,8 +6,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:do_thing/models/smartschool_message.dart';
 import 'package:do_thing/providers/database_provider.dart';
-import 'package:do_thing/services/smartschool_bridge.dart';
-import 'package:do_thing/services/smartschool_messages_service.dart';
+import 'package:do_thing/services/smartschool/smartschool_bridge.dart';
+import 'package:do_thing/services/smartschool/smartschool_message_cache_controller.dart';
+import 'package:do_thing/services/smartschool/smartschool_messages_controller.dart';
+import 'package:do_thing/services/smartschool/smartschool_polling_controller.dart';
 import 'package:do_thing/controllers/status_controller.dart';
 
 class _FakeBridge implements SmartschoolBridge {

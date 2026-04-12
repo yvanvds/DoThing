@@ -1,18 +1,19 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:webview_all/webview_all.dart';
 
 import '../../../models/smartschool_message.dart';
 import '../../../controllers/status_controller.dart';
 import '../../../providers/database_provider.dart';
-import '../../../services/smartschool_messages_service.dart';
-import '../../../services/smartschool_auth_service.dart';
-import '../../../services/smartschool_bridge.dart';
+import '../../../services/downloads_file_store.dart';
+import '../../../services/smartschool/smartschool_auth_controller.dart';
+import '../../../services/smartschool/smartschool_bridge_exception.dart';
+import '../../../services/smartschool/smartschool_message_cache_controller.dart';
+import '../../../services/smartschool/smartschool_messages_controller.dart';
+import 'widgets/message_html_body_view.dart';
 
 /// Displays the full detail of a selected Smartschool message.
 ///
@@ -423,7 +424,10 @@ class SmartschoolMessageDetailView extends ConsumerWidget {
       }
 
       final bytes = base64Decode(encoded);
-      final file = await _saveToDownloads(downloaded.name, bytes);
+      final file = await DownloadsFileStore.saveToDownloads(
+        downloaded.name,
+        bytes,
+      );
 
       var opened = false;
       final fileUri = Uri.file(file.path);
@@ -445,47 +449,6 @@ class SmartschoolMessageDetailView extends ConsumerWidget {
         SnackBar(content: Text('Failed to download attachment: $e')),
       );
     }
-  }
-
-  Future<File> _saveToDownloads(String fileName, List<int> bytes) async {
-    final userProfile = Platform.environment['USERPROFILE'];
-    Directory targetDir;
-    if (userProfile != null && userProfile.isNotEmpty) {
-      final downloads = Directory('$userProfile\\Downloads');
-      if (downloads.existsSync()) {
-        targetDir = downloads;
-      } else {
-        targetDir = Directory.current;
-      }
-    } else {
-      targetDir = Directory.current;
-    }
-
-    if (!targetDir.existsSync()) {
-      targetDir.createSync(recursive: true);
-    }
-
-    final uniquePath = _buildUniquePath(targetDir.path, fileName);
-    final file = File(uniquePath);
-    await file.writeAsBytes(bytes, flush: true);
-    return file;
-  }
-
-  String _buildUniquePath(String directoryPath, String fileName) {
-    final safeName = fileName.trim().isEmpty ? 'attachment.bin' : fileName;
-    final dotIndex = safeName.lastIndexOf('.');
-    final hasExtension = dotIndex > 0 && dotIndex < safeName.length - 1;
-    final baseName = hasExtension ? safeName.substring(0, dotIndex) : safeName;
-    final extension = hasExtension ? safeName.substring(dotIndex) : '';
-
-    var candidate = '$directoryPath${Platform.pathSeparator}$safeName';
-    var counter = 1;
-    while (File(candidate).existsSync()) {
-      candidate =
-          '$directoryPath${Platform.pathSeparator}$baseName ($counter)$extension';
-      counter++;
-    }
-    return candidate;
   }
 
   @override
@@ -606,7 +569,12 @@ class SmartschoolMessageDetailView extends ConsumerWidget {
           ),
         ),
         const Divider(height: 1),
-        Expanded(child: _HtmlBodyView(html: msg.body)),
+        Expanded(
+          child: MessageHtmlBodyView(
+            html: msg.body,
+            preprocessHtml: _fixRelativeImageUrls,
+          ),
+        ),
         if (attachments.isNotEmpty) ...[
           const Divider(height: 1),
           _buildAttachmentsRow(context, ref, attachments),
@@ -943,131 +911,14 @@ class SmartschoolMessageDetailView extends ConsumerWidget {
     }
     return null;
   }
-}
 
-// ---------------------------------------------------------------------------
-// WebView-based body renderer
-// ---------------------------------------------------------------------------
-
-class _HtmlBodyView extends StatefulWidget {
-  const _HtmlBodyView({required this.html});
-
-  final String html;
-
-  @override
-  State<_HtmlBodyView> createState() => _HtmlBodyViewState();
-}
-
-class _HtmlBodyViewState extends State<_HtmlBodyView> {
-  late final WebViewController _controller;
-  Object? _webViewError;
-
-  static String _wrapHtml(String body) =>
-      '''<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <style>
-    body {
-      font-family: sans-serif;
-      font-size: 14px;
-      color: #212121;
-      background: #ffffff;
-      margin: 12px;
-      padding: 0;
-      word-wrap: break-word;
-    }
-    a { color: #1565C0; }
-    img { max-width: 100%; height: auto; }
-    table { border-collapse: collapse; }
-    td, th { padding: 4px 8px; vertical-align: top; }
-  </style>
-  <script>
-    document.addEventListener('click', function(e) {
-      var el = e.target;
-      while (el && el.tagName !== 'A') { el = el.parentElement; }
-      if (el && el.href && (el.href.startsWith('http://') || el.href.startsWith('https://'))) {
-        e.preventDefault();
-        LinkHandler.postMessage(el.href);
-      }
-    });
-  </script>
-</head>
-<body>$body</body>
-</html>''';
-
-  static String _plainText(String html) {
-    return html
-        .replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n')
-        .replaceAll(
-          RegExp(r'</(p|div|li|tr|h[1-6])>', caseSensitive: false),
-          '\n',
-        )
-        .replaceAll(RegExp(r'<[^>]+>'), ' ')
-        .replaceAll('&nbsp;', ' ')
-        .replaceAll('&amp;', '&')
-        .replaceAll('&lt;', '<')
-        .replaceAll('&gt;', '>')
-        .replaceAll('&quot;', '"')
-        .replaceAll('&#39;', "'")
-        .replaceAll(RegExp(r'\n\s*\n+'), '\n\n')
-        .replaceAll(RegExp(r'[ \t]+'), ' ')
-        .trim();
-  }
-
-  Future<void> _loadHtml(String html) async {
-    try {
-      await _controller.loadHtmlString(_wrapHtml(_fixRelativeImageUrls(html)));
-      if (!mounted || _webViewError == null) return;
-      setState(() {
-        _webViewError = null;
-      });
-    } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _webViewError = error;
-      });
-    }
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..addJavaScriptChannel(
-        'LinkHandler',
-        onMessageReceived: (msg) {
-          final uri = Uri.tryParse(msg.message);
-          if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
-            unawaited(launchUrl(uri, mode: LaunchMode.externalApplication));
-          }
-        },
-      );
-    unawaited(_loadHtml(widget.html));
-  }
-
-  @override
-  void didUpdateWidget(_HtmlBodyView oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.html != widget.html) {
-      unawaited(_loadHtml(widget.html));
-    }
-  }
-
-  /// Rewrites Smartschool relative image paths to absolute stream URLs.
-  ///
-  /// Input:  src="/public/{platform}/Images/{filename}/unique_id/{uid}"
-  /// Output: src="https://{platform}.smartschool.be/TinyMCE/Image/stream
-  ///              ?platform={platform}&filename={filename}&unique_id={uid}"
   static String _fixRelativeImageUrls(String html) {
     return html.replaceAllMapped(
       RegExp(r'src="(/public/([^/"&]+)/Images/([^/"]+)/unique_id/([^"]+))"'),
-      (m) {
-        final platform = _htmlDecode(m[2]!);
-        final filename = _htmlDecode(m[3]!);
-        final uniqueId = _htmlDecode(m[4]!);
+      (match) {
+        final platform = _htmlDecode(match[2]!);
+        final filename = _htmlDecode(match[3]!);
+        final uniqueId = _htmlDecode(match[4]!);
         final newUrl =
             'https://$platform.smartschool.be/TinyMCE/Image/stream'
             '?platform=$platform&filename=$filename&unique_id=$uniqueId';
@@ -1076,7 +927,6 @@ class _HtmlBodyViewState extends State<_HtmlBodyView> {
     );
   }
 
-  /// Decodes common HTML character entities in a URL attribute value.
   static String _htmlDecode(String input) {
     return input
         .replaceAll('&#43;', '+')
@@ -1085,45 +935,6 @@ class _HtmlBodyViewState extends State<_HtmlBodyView> {
         .replaceAll('&gt;', '>')
         .replaceAll('&quot;', '"')
         .replaceAll('&#39;', "'");
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_webViewError != null) {
-      final colorScheme = Theme.of(context).colorScheme;
-      final fallbackBody = _plainText(_fixRelativeImageUrls(widget.html));
-      return Container(
-        color: colorScheme.surface,
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: colorScheme.errorContainer,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                'Embedded message view is unavailable on this Windows session. Showing a plain-text fallback instead.\n$_webViewError',
-                style: TextStyle(color: colorScheme.onErrorContainer),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Expanded(
-              child: SingleChildScrollView(
-                child: SelectableText(
-                  fallbackBody.isEmpty ? widget.html : fallbackBody,
-                  style: const TextStyle(fontSize: 13, height: 1.35),
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-    return WebViewWidget(controller: _controller);
   }
 }
 

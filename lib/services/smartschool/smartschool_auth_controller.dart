@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../controllers/smartschool_settings_controller.dart';
-import '../controllers/status_controller.dart';
+import '../../controllers/smartschool_settings_controller.dart';
+import '../../controllers/status_controller.dart';
 import 'smartschool_bridge.dart';
 
 /// High-level connection / authentication state.

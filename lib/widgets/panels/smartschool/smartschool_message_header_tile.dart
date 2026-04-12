@@ -3,8 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'dart:async';
 
 import '../../../controllers/smartschool_inbox_controller.dart';
-import '../../../services/office365_mail_service.dart';
-import '../../../services/smartschool_messages_service.dart';
+import '../../../services/office365/office365_mail_service.dart';
+import '../../../services/smartschool/smartschool_messages_controller.dart';
+import '../../../services/smartschool/smartschool_selected_message_controller.dart';
 
 class SmartschoolMessageHeaderTile extends ConsumerStatefulWidget {
   const SmartschoolMessageHeaderTile({

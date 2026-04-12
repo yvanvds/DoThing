@@ -7,7 +7,12 @@
         {
             "name": "do_thing",
             "request": "launch",
-            "type": "dart"
+            "type": "dart",
+            "flutterMode": "debug",
+            "vmAdditionalArgs": [
+                "--no-pause-isolates-on-start",
+                "--no-pause-isolates-on-exit"
+            ]
         },
         {
             "name": "do_thing (profile mode)",

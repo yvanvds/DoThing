@@ -2,9 +2,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:do_thing/controllers/status_controller.dart';
 import 'package:do_thing/models/smartschool_message.dart';
-import 'package:do_thing/services/smartschool_auth_service.dart';
-import 'package:do_thing/services/smartschool_bridge.dart';
-import 'package:do_thing/services/smartschool_messages_service.dart';
+import 'package:do_thing/services/smartschool/smartschool_auth_controller.dart';
+import 'package:do_thing/services/smartschool/smartschool_bridge.dart';
+import 'package:do_thing/services/smartschool/smartschool_messages_controller.dart';
 
 class _FakeBridge implements SmartschoolBridge {
   int? markedUnreadId;

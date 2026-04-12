@@ -73,7 +73,7 @@ class _AppShellState extends ConsumerState<AppShell> {
     final bus = ref.read(commandBusProvider);
     final viewport = MediaQuery.sizeOf(context);
     final chatWidth = _horizontalController.areas.first.size ?? 300;
-    final minPaletteWidth = 320.0;
+    const minPaletteWidth = 320.0;
 
     final rawPaletteLeft = Sidebar.width + chatWidth;
     final maxPaletteLeft = (viewport.width - minPaletteWidth).clamp(
@@ -105,7 +105,7 @@ class _AppShellState extends ConsumerState<AppShell> {
         left: paletteLeft,
         width: paletteWidth,
         height: viewport.height,
-        openKeySet: SingleActivator(LogicalKeyboardKey.f24),
+        openKeySet: const SingleActivator(LogicalKeyboardKey.f24),
         style: const CommandPaletteStyle(
           commandPaletteBarrierColor: Colors.transparent,
         ),

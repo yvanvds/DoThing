@@ -3,8 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/smartschool_message.dart';
 import '../providers/database_provider.dart';
 import 'status_controller.dart';
-import '../services/smartschool_auth_service.dart';
-import '../services/smartschool_messages_service.dart';
+import '../services/smartschool/smartschool_auth_controller.dart';
+import '../services/smartschool/smartschool_messages_controller.dart';
+import '../services/smartschool/smartschool_polling_controller.dart';
 
 enum SmartschoolRelatedItemType { message }
 

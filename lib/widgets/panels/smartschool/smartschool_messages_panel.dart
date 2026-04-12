@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:multi_split_view/multi_split_view.dart';
 
-import '../../../services/smartschool_messages_service.dart';
+import '../../../services/smartschool/smartschool_messages_controller.dart';
+import '../../../services/smartschool/smartschool_selected_message_controller.dart';
 import 'outlook_message_detail.dart';
 import 'smartschool_message_detail.dart';
 import 'smartschool_message_list.dart';
@@ -45,21 +46,33 @@ class _MessagesPanelState extends ConsumerState<MessagesPanel> {
 
         return Container(
           color: colorScheme.surfaceContainerLow,
-          child: selectedHeader != null
-              ? selectedHeader.source == 'smartschool'
-                    ? SmartschoolMessageDetailView(header: selectedHeader)
-                    : OutlookMessageDetailView(header: selectedHeader)
-              : Center(
-                  child: Text(
-                    'Select an item to view details',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: colorScheme.outline,
-                    ),
-                  ),
-                ),
+          child: _buildSelectedHeaderView(context, colorScheme, selectedHeader),
         );
       },
     );
+  }
+
+  Widget _buildSelectedHeaderView(
+    BuildContext context,
+    ColorScheme colorScheme,
+    SmartschoolMessageHeader? selectedHeader,
+  ) {
+    if (selectedHeader == null) {
+      return Center(
+        child: Text(
+          'Select an item to view details',
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: colorScheme.outline),
+        ),
+      );
+    }
+
+    if (selectedHeader.source == 'smartschool') {
+      return SmartschoolMessageDetailView(header: selectedHeader);
+    }
+
+    return OutlookMessageDetailView(header: selectedHeader);
   }
 }
 

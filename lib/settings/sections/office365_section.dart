@@ -7,7 +7,8 @@ import '../../controllers/office365_settings_controller.dart';
 import '../../controllers/status_controller.dart';
 import '../../models/office365_settings.dart';
 import '../../providers/database_provider.dart';
-import '../../services/office365_mail_service.dart';
+import '../../services/office365/office365_mail_service.dart';
+import '../../services/office365/office365_polling_controller.dart';
 
 class Office365Section extends ConsumerStatefulWidget {
   const Office365Section({super.key});

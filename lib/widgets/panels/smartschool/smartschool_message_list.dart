@@ -5,8 +5,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../controllers/smartschool_inbox_controller.dart';
 import '../../../controllers/status_controller.dart';
-import '../../../services/office365_mail_service.dart';
-import '../../../services/smartschool_messages_service.dart';
+import '../../../services/office365/office365_mail_service.dart';
+import '../../../services/office365/office365_polling_controller.dart';
+import '../../../services/smartschool/smartschool_messages_controller.dart';
+import '../../../services/smartschool/smartschool_polling_controller.dart';
+import '../../../services/smartschool/smartschool_selected_message_controller.dart';
 import 'smartschool_message_header_tile.dart';
 
 class SmartschoolMessageList extends ConsumerStatefulWidget {
@@ -530,9 +533,15 @@ class _SmartschoolMessageListState
       return;
     }
 
-    final snackBarText = state.firstError == null
-        ? '$successVerb ${state.successCount} message${state.successCount == 1 ? '' : 's'} from ${contact.displayName}.'
-        : '$successVerb ${state.successCount} of ${contact.items.length} messages. First error: ${state.firstError}';
+    final messageWord = state.successCount == 1 ? 'message' : 'messages';
+    String snackBarText;
+    if (state.firstError == null) {
+      snackBarText =
+          '$successVerb ${state.successCount} $messageWord from ${contact.displayName}.';
+    } else {
+      snackBarText =
+          '$successVerb ${state.successCount} of ${contact.items.length} messages. First error: ${state.firstError}';
+    }
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(snackBarText)));
@@ -613,46 +622,57 @@ class _SmartschoolMessageListState
             ),
           ),
         ),
-        Expanded(
-          child: _isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : _errorText != null
-              ? Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Text(
-                    _errorText!,
-                    style: TextStyle(color: colorScheme.error, fontSize: 12),
-                  ),
-                )
-              : filtered.isEmpty
-              ? Center(
-                  child: Text(
-                    _contacts.isEmpty ? 'No people yet' : 'No matching people',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                )
-              : ListView.builder(
-                  itemCount: filtered.length,
-                  itemBuilder: (context, index) {
-                    final contact = filtered[index];
-                    return _ContactTile(
-                      contact: contact,
-                      isExpanded: _expandedContacts.contains(contact.contactId),
-                      isBulkBusy: _bulkBusyContacts.contains(contact.contactId),
-                      bulkProgress: _bulkProgressByContact[contact.contactId],
-                      onToggleExpand: () => _toggleContact(contact),
-                      onArchiveAll: _archiveAllForContact,
-                      onDeleteAll: _deleteAllForContact,
-                      onRemoveFromList: _removeHeaderFromList,
-                      onHeaderUpdated: _updateHeaderInList,
-                    );
-                  },
-                ),
-        ),
+        Expanded(child: _buildListBody(colorScheme, filtered)),
       ],
+    );
+  }
+
+  Widget _buildListBody(
+    ColorScheme colorScheme,
+    List<SmartschoolContactInbox> filtered,
+  ) {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_errorText != null) {
+      return Padding(
+        padding: const EdgeInsets.all(12),
+        child: Text(
+          _errorText!,
+          style: TextStyle(color: colorScheme.error, fontSize: 12),
+        ),
+      );
+    }
+
+    if (filtered.isEmpty) {
+      final emptyText = _contacts.isEmpty
+          ? 'No people yet'
+          : 'No matching people';
+      return Center(
+        child: Text(
+          emptyText,
+          style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+        ),
+      );
+    }
+
+    return ListView.builder(
+      itemCount: filtered.length,
+      itemBuilder: (context, index) {
+        final contact = filtered[index];
+        return _ContactTile(
+          contact: contact,
+          isExpanded: _expandedContacts.contains(contact.contactId),
+          isBulkBusy: _bulkBusyContacts.contains(contact.contactId),
+          bulkProgress: _bulkProgressByContact[contact.contactId],
+          onToggleExpand: () => _toggleContact(contact),
+          onArchiveAll: _archiveAllForContact,
+          onDeleteAll: _deleteAllForContact,
+          onRemoveFromList: _removeHeaderFromList,
+          onHeaderUpdated: _updateHeaderInList,
+        );
+      },
     );
   }
 
@@ -705,174 +725,7 @@ class _ContactTileState extends State<_ContactTile> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        MouseRegion(
-          onEnter: (_) => setState(() => _isHovered = true),
-          onExit: (_) => setState(() => _isHovered = false),
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: widget.onToggleExpand,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: widget.contact.unreadCount > 0
-                      ? colorScheme.primaryContainer.withValues(alpha: 0.15)
-                      : Colors.transparent,
-                  border: Border(
-                    bottom: BorderSide(color: colorScheme.outlineVariant),
-                  ),
-                ),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      widget.isExpanded ? Icons.expand_less : Icons.expand_more,
-                      size: 18,
-                      color: colorScheme.onSurfaceVariant,
-                    ),
-                    const SizedBox(width: 8),
-                    CircleAvatar(
-                      radius: 16,
-                      backgroundColor: colorScheme.surfaceContainerHighest,
-                      foregroundImage:
-                          widget.contact.avatarUrl != null &&
-                              widget.contact.avatarUrl!.trim().isNotEmpty
-                          ? NetworkImage(widget.contact.avatarUrl!)
-                          : null,
-                      child:
-                          widget.contact.avatarUrl == null ||
-                              widget.contact.avatarUrl!.trim().isEmpty
-                          ? Text(
-                              _initial(widget.contact.displayName),
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: colorScheme.onSurfaceVariant,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            )
-                          : null,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            widget.contact.displayName,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: widget.contact.unreadCount > 0
-                                  ? FontWeight.w700
-                                  : FontWeight.w500,
-                              color: widget.contact.unreadCount > 0
-                                  ? colorScheme.primary
-                                  : colorScheme.onSurface,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            '${widget.contact.itemCount} related item${widget.contact.itemCount == 1 ? '' : 's'}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    if (widget.contact.unreadCount > 0) ...[
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 1,
-                        ),
-                        decoration: BoxDecoration(
-                          color: colorScheme.primaryContainer,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Text(
-                          '${widget.contact.unreadCount}',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: colorScheme.onPrimaryContainer,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                    ],
-                    Text(
-                      _formatDate(
-                        widget.contact.latestActivityAt.toIso8601String(),
-                      ),
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    if (progress != null) ...[
-                      const SizedBox(width: 8),
-                      Text(
-                        '${progress.actionLabel} ${progress.processed}/${progress.total}',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: colorScheme.primary,
-                        ),
-                      ),
-                    ],
-                    if (showBulkActions) ...[
-                      const SizedBox(width: 8),
-                      IconButton(
-                        onPressed: widget.isBulkBusy
-                            ? null
-                            : () async {
-                                final confirmed = await _confirmBulkAction(
-                                  context,
-                                  title: 'Archive all messages?',
-                                  message:
-                                      'Archive all ${widget.contact.itemCount} related items for ${widget.contact.displayName}?',
-                                  confirmLabel: 'Archive all',
-                                );
-                                if (!confirmed) return;
-                                await widget.onArchiveAll(widget.contact);
-                              },
-                        icon: const Icon(Icons.archive_outlined, size: 18),
-                        tooltip: 'Archive all for this contact',
-                        visualDensity: VisualDensity.compact,
-                      ),
-                      IconButton(
-                        onPressed: widget.isBulkBusy
-                            ? null
-                            : () async {
-                                final confirmed = await _confirmBulkAction(
-                                  context,
-                                  title: 'Delete all messages?',
-                                  message:
-                                      'Delete all ${widget.contact.itemCount} related items for ${widget.contact.displayName}? This cannot be undone.',
-                                  confirmLabel: 'Delete all',
-                                  isDestructive: true,
-                                );
-                                if (!confirmed) return;
-                                await widget.onDeleteAll(widget.contact);
-                              },
-                        icon: const Icon(Icons.delete_outline, size: 18),
-                        tooltip: 'Delete all for this contact',
-                        visualDensity: VisualDensity.compact,
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
+        _buildContactHeader(colorScheme, showBulkActions, progress),
         if (widget.isExpanded)
           Container(
             decoration: BoxDecoration(
@@ -897,6 +750,186 @@ class _ContactTileState extends State<_ContactTile> {
               ],
             ),
           ),
+      ],
+    );
+  }
+
+  Widget _buildContactHeader(
+    ColorScheme colorScheme,
+    bool showBulkActions,
+    _BulkProgress? progress,
+  ) {
+    final avatarUrl = widget.contact.avatarUrl?.trim() ?? '';
+    final hasAvatar = avatarUrl.isNotEmpty;
+    final unreadColor = widget.contact.unreadCount > 0
+        ? colorScheme.primaryContainer.withValues(alpha: 0.15)
+        : Colors.transparent;
+    final contactWeight = widget.contact.unreadCount > 0
+        ? FontWeight.w700
+        : FontWeight.w500;
+    final contactColor = widget.contact.unreadCount > 0
+        ? colorScheme.primary
+        : colorScheme.onSurface;
+    final itemWord = widget.contact.itemCount == 1 ? 'item' : 'items';
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: widget.onToggleExpand,
+          child: Container(
+            decoration: BoxDecoration(
+              color: unreadColor,
+              border: Border(
+                bottom: BorderSide(color: colorScheme.outlineVariant),
+              ),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Row(
+              children: [
+                Icon(
+                  widget.isExpanded ? Icons.expand_less : Icons.expand_more,
+                  size: 18,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 8),
+                CircleAvatar(
+                  radius: 16,
+                  backgroundColor: colorScheme.surfaceContainerHighest,
+                  foregroundImage: hasAvatar ? NetworkImage(avatarUrl) : null,
+                  child: hasAvatar
+                      ? null
+                      : Text(
+                          _initial(widget.contact.displayName),
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: colorScheme.onSurfaceVariant,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.contact.displayName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: contactWeight,
+                          color: contactColor,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${widget.contact.itemCount} related $itemWord',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (widget.contact.unreadCount > 0) ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 1,
+                    ),
+                    decoration: BoxDecoration(
+                      color: colorScheme.primaryContainer,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '${widget.contact.unreadCount}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: colorScheme.onPrimaryContainer,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                Text(
+                  _formatDate(
+                    widget.contact.latestActivityAt.toIso8601String(),
+                  ),
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                if (progress != null) ...[
+                  const SizedBox(width: 8),
+                  Text(
+                    '${progress.actionLabel} ${progress.processed}/${progress.total}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: colorScheme.primary,
+                    ),
+                  ),
+                ],
+                if (showBulkActions) _buildBulkActionButtons(context),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBulkActionButtons(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const SizedBox(width: 8),
+        IconButton(
+          onPressed: widget.isBulkBusy
+              ? null
+              : () async {
+                  final confirmed = await _confirmBulkAction(
+                    context,
+                    title: 'Archive all messages?',
+                    message:
+                        'Archive all ${widget.contact.itemCount} related items for ${widget.contact.displayName}?',
+                    confirmLabel: 'Archive all',
+                  );
+                  if (!confirmed) return;
+                  await widget.onArchiveAll(widget.contact);
+                },
+          icon: const Icon(Icons.archive_outlined, size: 18),
+          tooltip: 'Archive all for this contact',
+          visualDensity: VisualDensity.compact,
+        ),
+        IconButton(
+          onPressed: widget.isBulkBusy
+              ? null
+              : () async {
+                  final confirmed = await _confirmBulkAction(
+                    context,
+                    title: 'Delete all messages?',
+                    message:
+                        'Delete all ${widget.contact.itemCount} related items for ${widget.contact.displayName}? This cannot be undone.',
+                    confirmLabel: 'Delete all',
+                    isDestructive: true,
+                  );
+                  if (!confirmed) return;
+                  await widget.onDeleteAll(widget.contact);
+                },
+          icon: const Icon(Icons.delete_outline, size: 18),
+          tooltip: 'Delete all for this contact',
+          visualDensity: VisualDensity.compact,
+        ),
       ],
     );
   }

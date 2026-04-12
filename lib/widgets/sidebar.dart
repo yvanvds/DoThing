@@ -3,8 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../commands/command_bus.dart';
 import '../controllers/smartschool_inbox_controller.dart';
-import '../services/office365_mail_service.dart';
-import '../services/smartschool_messages_service.dart';
+import '../services/office365/office365_polling_controller.dart';
+import '../services/smartschool/smartschool_polling_controller.dart';
 
 class Sidebar extends ConsumerWidget {
   const Sidebar({super.key});

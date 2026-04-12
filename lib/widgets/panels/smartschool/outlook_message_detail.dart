@@ -5,12 +5,12 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:webview_all/webview_all.dart';
 
 import '../../../controllers/status_controller.dart';
 import '../../../providers/database_provider.dart';
-import '../../../services/office365_mail_service.dart';
-import '../../../services/smartschool_messages_service.dart';
+import '../../../services/office365/office365_mail_service.dart';
+import '../../../services/smartschool/smartschool_messages_controller.dart';
+import 'widgets/message_html_body_view.dart';
 
 class OutlookMessageDetailView extends ConsumerStatefulWidget {
   const OutlookMessageDetailView({required this.header, super.key});
@@ -526,11 +526,7 @@ class _OutlookMessageDetailViewState
     final bodyText = row.bodyText?.trim() ?? '';
     final bodyFormat = (row.bodyFormat ?? '').toLowerCase();
     final hasHtml = bodyRaw.isNotEmpty && bodyFormat.contains('html');
-    final plainBody = bodyText.isNotEmpty
-        ? bodyText
-        : (bodyRaw.isNotEmpty
-              ? bodyRaw
-              : '(No body available yet. Click refresh.)');
+    final plainBody = _resolvePlainBody(bodyText: bodyText, bodyRaw: bodyRaw);
 
     return _MessageBodyState(
       bodyRaw: bodyRaw,
@@ -570,11 +566,10 @@ class _OutlookMessageDetailViewState
     final visual = _attachmentVisual(attachment, colorScheme);
     final isDownloading = _downloadingAttachmentIds.contains(attachment.id);
     final isDownloaded = (attachment.localPath ?? '').trim().isNotEmpty;
-    final icon = isDownloading
-        ? null
-        : isDownloaded
-        ? Icons.open_in_new
-        : Icons.download_outlined;
+    final icon = _attachmentActionIcon(
+      isDownloading: isDownloading,
+      isDownloaded: isDownloaded,
+    );
 
     return ActionChip(
       onPressed: isDownloading
@@ -603,6 +598,32 @@ class _OutlookMessageDetailViewState
     );
   }
 
+  String _resolvePlainBody({
+    required String bodyText,
+    required String bodyRaw,
+  }) {
+    if (bodyText.isNotEmpty) {
+      return bodyText;
+    }
+    if (bodyRaw.isNotEmpty) {
+      return bodyRaw;
+    }
+    return '(No body available yet. Click refresh.)';
+  }
+
+  IconData? _attachmentActionIcon({
+    required bool isDownloading,
+    required bool isDownloaded,
+  }) {
+    if (isDownloading) {
+      return null;
+    }
+    if (isDownloaded) {
+      return Icons.open_in_new;
+    }
+    return Icons.download_outlined;
+  }
+
   Widget _buildBodyPanel(_MessageBodyState body, ColorScheme colorScheme) {
     return Container(
       width: double.infinity,
@@ -613,7 +634,7 @@ class _OutlookMessageDetailViewState
         color: colorScheme.surface,
       ),
       child: body.hasHtml
-          ? _OutlookHtmlBodyView(html: body.bodyRaw)
+          ? MessageHtmlBodyView(html: body.bodyRaw)
           : Padding(
               padding: const EdgeInsets.all(12),
               child: SingleChildScrollView(
@@ -662,153 +683,4 @@ class _MessageBodyState {
   final String bodyRaw;
   final String plainBody;
   final bool hasHtml;
-}
-
-class _OutlookHtmlBodyView extends StatefulWidget {
-  const _OutlookHtmlBodyView({required this.html});
-
-  final String html;
-
-  @override
-  State<_OutlookHtmlBodyView> createState() => _OutlookHtmlBodyViewState();
-}
-
-class _OutlookHtmlBodyViewState extends State<_OutlookHtmlBodyView> {
-  late final WebViewController _controller;
-  Object? _webViewError;
-
-  static String _wrapHtml(String body) =>
-      '''<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <style>
-    body {
-      font-family: sans-serif;
-      font-size: 14px;
-      color: #212121;
-      background: #ffffff;
-      margin: 12px;
-      padding: 0;
-      word-wrap: break-word;
-      user-select: text;
-      -webkit-user-select: text;
-    }
-    a { color: #1565C0; }
-    img { max-width: 100%; height: auto; }
-    table { border-collapse: collapse; max-width: 100%; }
-    td, th { padding: 4px 8px; vertical-align: top; }
-  </style>
-  <script>
-    document.addEventListener('click', function(e) {
-      var el = e.target;
-      while (el && el.tagName !== 'A') { el = el.parentElement; }
-      if (el && el.href && (el.href.startsWith('http://') || el.href.startsWith('https://'))) {
-        e.preventDefault();
-        LinkHandler.postMessage(el.href);
-      }
-    });
-  </script>
-</head>
-<body>$body</body>
-</html>''';
-
-  static String _plainText(String html) {
-    return html
-        .replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n')
-        .replaceAll(
-          RegExp(r'</(p|div|li|tr|h[1-6])>', caseSensitive: false),
-          '\n',
-        )
-        .replaceAll(RegExp(r'<[^>]+>'), ' ')
-        .replaceAll('&nbsp;', ' ')
-        .replaceAll('&amp;', '&')
-        .replaceAll('&lt;', '<')
-        .replaceAll('&gt;', '>')
-        .replaceAll('&quot;', '"')
-        .replaceAll('&#39;', "'")
-        .replaceAll(RegExp(r'\n\s*\n+'), '\n\n')
-        .replaceAll(RegExp(r'[ \t]+'), ' ')
-        .trim();
-  }
-
-  Future<void> _loadHtml(String html) async {
-    try {
-      await _controller.loadHtmlString(_wrapHtml(html));
-      if (!mounted || _webViewError == null) return;
-      setState(() {
-        _webViewError = null;
-      });
-    } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _webViewError = error;
-      });
-    }
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..addJavaScriptChannel(
-        'LinkHandler',
-        onMessageReceived: (msg) {
-          final uri = Uri.tryParse(msg.message);
-          if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
-            unawaited(launchUrl(uri, mode: LaunchMode.externalApplication));
-          }
-        },
-      );
-    unawaited(_loadHtml(widget.html));
-  }
-
-  @override
-  void didUpdateWidget(covariant _OutlookHtmlBodyView oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.html != widget.html) {
-      unawaited(_loadHtml(widget.html));
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_webViewError != null) {
-      final colorScheme = Theme.of(context).colorScheme;
-      final fallbackBody = _plainText(widget.html);
-      return Container(
-        color: colorScheme.surface,
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: colorScheme.errorContainer,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                'Embedded message view is unavailable on this Windows session. Showing a plain-text fallback instead.\n$_webViewError',
-                style: TextStyle(color: colorScheme.onErrorContainer),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Expanded(
-              child: SingleChildScrollView(
-                child: SelectableText(
-                  fallbackBody.isEmpty ? widget.html : fallbackBody,
-                  style: const TextStyle(fontSize: 13, height: 1.35),
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-    return WebViewWidget(controller: _controller);
-  }
 }
