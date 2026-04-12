@@ -16,6 +16,17 @@ abstract class SmartschoolMessagesApi {
     required List<int> alreadySeenIds,
   });
 
+  Future<(List<MessageSearchUser>, List<MessageSearchGroup>)>
+  searchRecipientsForCompose(String query);
+
+  Future<void> sendMessage({
+    required List<MessageSearchUser> to,
+    List<MessageSearchUser> cc,
+    List<MessageSearchUser> bcc,
+    required String subject,
+    required String bodyHtml,
+  });
+
   Future<FullMessage?> getMessage(int messageId);
   Future<List<dynamic>> getAttachments(int messageId);
   Future<void> markUnread(int messageId);
@@ -46,6 +57,26 @@ class _SmartschoolMessagesServiceAdapter implements SmartschoolMessagesApi {
     required BoxType boxType,
     required List<int> alreadySeenIds,
   }) => _service.getHeaders(boxType: boxType, alreadySeenIds: alreadySeenIds);
+
+  @override
+  Future<(List<MessageSearchUser>, List<MessageSearchGroup>)>
+  searchRecipientsForCompose(String query) =>
+      _service.searchRecipientsForCompose(query);
+
+  @override
+  Future<void> sendMessage({
+    required List<MessageSearchUser> to,
+    List<MessageSearchUser> cc = const [],
+    List<MessageSearchUser> bcc = const [],
+    required String subject,
+    required String bodyHtml,
+  }) => _service.sendMessage(
+    to: to,
+    cc: cc,
+    bcc: bcc,
+    subject: subject,
+    bodyHtml: bodyHtml,
+  );
 
   @override
   Future<FullMessage?> getMessage(int messageId) =>
@@ -254,6 +285,37 @@ class SmartschoolBridge {
             ),
           )
           .toList();
+    } catch (error) {
+      throw SmartschoolBridgeException(error.toString());
+    }
+  }
+
+  Future<List<MessageSearchUser>> searchRecipientsForCompose(
+    String query,
+  ) async {
+    try {
+      final (users, _) = await _messages.searchRecipientsForCompose(query);
+      return users;
+    } catch (error) {
+      throw SmartschoolBridgeException(error.toString());
+    }
+  }
+
+  Future<void> sendMessage({
+    required List<MessageSearchUser> to,
+    List<MessageSearchUser> cc = const [],
+    List<MessageSearchUser> bcc = const [],
+    required String subject,
+    required String bodyHtml,
+  }) async {
+    try {
+      await _messages.sendMessage(
+        to: to,
+        cc: cc,
+        bcc: bcc,
+        subject: subject,
+        bodyHtml: bodyHtml,
+      );
     } catch (error) {
       throw SmartschoolBridgeException(error.toString());
     }

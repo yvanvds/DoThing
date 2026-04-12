@@ -164,4 +164,19 @@ class _FakeMessagesApi implements SmartschoolMessagesApi {
   Future<List<dynamic>> getAttachments(int messageId) async {
     return const [];
   }
+
+  @override
+  Future<(List<MessageSearchUser>, List<MessageSearchGroup>)>
+  searchRecipientsForCompose(String query) async {
+    return (<MessageSearchUser>[], <MessageSearchGroup>[]);
+  }
+
+  @override
+  Future<void> sendMessage({
+    required List<MessageSearchUser> to,
+    List<MessageSearchUser> cc = const [],
+    List<MessageSearchUser> bcc = const [],
+    required String subject,
+    required String bodyHtml,
+  }) async {}
 }

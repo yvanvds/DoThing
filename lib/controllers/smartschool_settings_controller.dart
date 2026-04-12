@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/smartschool_settings.dart';
@@ -13,6 +14,11 @@ import '../models/smartschool_settings.dart';
 class SmartschoolSettingsController extends AsyncNotifier<SmartschoolSettings> {
   static const _appFolderName = 'DoThing';
   static const _settingsFileName = 'smartschool_settings.json';
+
+  Directory? _storageDirectory;
+
+  @visibleForTesting
+  void setStorageDirectory(Directory dir) => _storageDirectory = dir;
 
   @override
   Future<SmartschoolSettings> build() async {
@@ -62,13 +68,15 @@ class SmartschoolSettingsController extends AsyncNotifier<SmartschoolSettings> {
   }
 
   Future<File> _getSettingsFile() async {
-    final appData = Platform.environment['APPDATA'];
-    final basePath = (appData != null && appData.isNotEmpty)
-        ? appData
-        : Directory.current.path;
-    final settingsDir = Directory(
-      '$basePath${Platform.pathSeparator}$_appFolderName',
-    );
+    final settingsDir =
+        _storageDirectory ??
+        () {
+          final appData = Platform.environment['APPDATA'];
+          final basePath = (appData != null && appData.isNotEmpty)
+              ? appData
+              : Directory.current.path;
+          return Directory('$basePath${Platform.pathSeparator}$_appFolderName');
+        }();
     await settingsDir.create(recursive: true);
     return File(
       '${settingsDir.path}${Platform.pathSeparator}$_settingsFileName',

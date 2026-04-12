@@ -9,10 +9,12 @@ import 'tables/contact_identities_table.dart';
 import 'tables/messages_table.dart';
 import 'tables/message_participants_table.dart';
 import 'tables/message_attachments_table.dart';
+import 'tables/pending_outgoing_messages_table.dart';
 import 'tables/sync_state_table.dart';
 import 'daos/contacts_dao.dart';
 import 'daos/messages_dao.dart';
 import 'daos/attachments_dao.dart';
+import 'daos/pending_outgoing_messages_dao.dart';
 import 'daos/sync_state_dao.dart';
 import 'daos/search_dao.dart';
 
@@ -21,10 +23,12 @@ export 'tables/contact_identities_table.dart';
 export 'tables/messages_table.dart';
 export 'tables/message_participants_table.dart';
 export 'tables/message_attachments_table.dart';
+export 'tables/pending_outgoing_messages_table.dart';
 export 'tables/sync_state_table.dart';
 export 'daos/contacts_dao.dart';
 export 'daos/messages_dao.dart';
 export 'daos/attachments_dao.dart';
+export 'daos/pending_outgoing_messages_dao.dart';
 export 'daos/sync_state_dao.dart';
 export 'daos/search_dao.dart';
 
@@ -37,21 +41,30 @@ part 'app_database.g.dart';
     Messages,
     MessageParticipants,
     MessageAttachments,
+    PendingOutgoingMessages,
     SyncState,
   ],
-  daos: [ContactsDao, MessagesDao, AttachmentsDao, SyncStateDao, SearchDao],
+  daos: [
+    ContactsDao,
+    MessagesDao,
+    AttachmentsDao,
+    PendingOutgoingMessagesDao,
+    SyncStateDao,
+    SearchDao,
+  ],
 )
 class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
     onCreate: (m) async {
       await m.createAll();
       await _applySchemaV2Prep();
+      await _applySchemaV3Prep();
       // Create the FTS5 virtual table for message search.
       // This is a standalone (not external-content) table; all indexing is
       // handled explicitly from SearchDao.
@@ -90,6 +103,10 @@ class AppDatabase extends _$AppDatabase {
     onUpgrade: (m, from, to) async {
       if (from < 2) {
         await _applySchemaV2Prep();
+      }
+      if (from < 3) {
+        await m.createTable(pendingOutgoingMessages);
+        await _applySchemaV3Prep();
       }
     },
   );
@@ -137,6 +154,13 @@ class AppDatabase extends _$AppDatabase {
     await customStatement('''
       CREATE INDEX IF NOT EXISTS idx_messages_conversation
       ON messages (source, account_key, conversation_key, received_at DESC)
+    ''');
+  }
+
+  Future<void> _applySchemaV3Prep() async {
+    await customStatement('''
+      CREATE INDEX IF NOT EXISTS idx_pending_outgoing_next_attempt
+      ON pending_outgoing_messages (next_attempt_at, created_at)
     ''');
   }
 

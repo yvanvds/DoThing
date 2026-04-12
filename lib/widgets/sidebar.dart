@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../commands/command_bus.dart';
 import '../controllers/smartschool_inbox_controller.dart';
+import '../services/composer/pending_outgoing_retry_controller.dart';
 import '../services/office365/office365_polling_controller.dart';
 import '../services/smartschool/smartschool_polling_controller.dart';
 
@@ -16,6 +17,7 @@ class Sidebar extends ConsumerWidget {
     final bus = ref.read(commandBusProvider);
     final colorScheme = Theme.of(context).colorScheme;
     ref.read(office365PollingProvider.notifier).ensureStarted();
+    ref.read(pendingOutgoingRetryProvider.notifier).ensureStarted();
 
     ref.listen(smartschoolPollingProvider, (previous, next) {
       if (next != previous) {

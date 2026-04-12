@@ -122,6 +122,35 @@ class Office365MailService {
 
   final Ref ref;
 
+  Future<void> sendMail({
+    required List<String> toRecipients,
+    List<String> ccRecipients = const [],
+    List<String> bccRecipients = const [],
+    required String subject,
+    required String bodyHtml,
+  }) async {
+    if (toRecipients.isEmpty && ccRecipients.isEmpty && bccRecipients.isEmpty) {
+      throw StateError('At least one Outlook recipient is required.');
+    }
+
+    final token = await _ensureValidAccessToken();
+
+    final message = <String, dynamic>{
+      'subject': subject,
+      'body': <String, dynamic>{'contentType': 'HTML', 'content': bodyHtml},
+      'toRecipients': _graphRecipients(toRecipients),
+      'ccRecipients': _graphRecipients(ccRecipients),
+      'bccRecipients': _graphRecipients(bccRecipients),
+    };
+
+    await _sendWithoutResponseBody(
+      method: 'POST',
+      uri: Uri.parse('https://graph.microsoft.com/v1.0/me/sendMail'),
+      headers: {'Authorization': 'Bearer $token'},
+      body: {'message': message, 'saveToSentItems': true},
+    );
+  }
+
   Future<void> markMessageRead(int localMessageId) =>
       _setMessageReadState(localMessageId: localMessageId, isRead: true);
 
@@ -1214,6 +1243,17 @@ class Office365MailService {
 
   String _toPlainText(String raw, {required String bodyFormat}) {
     return Office365MailServiceUtils.toPlainText(raw, bodyFormat: bodyFormat);
+  }
+
+  List<Map<String, dynamic>> _graphRecipients(List<String> addresses) {
+    return addresses
+        .where((value) => value.trim().isNotEmpty)
+        .map(
+          (address) => {
+            'emailAddress': {'address': address.trim().toLowerCase()},
+          },
+        )
+        .toList(growable: false);
   }
 }
 

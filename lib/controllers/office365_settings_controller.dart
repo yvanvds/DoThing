@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/office365_settings.dart';
@@ -8,6 +9,11 @@ import '../models/office365_settings.dart';
 class Office365SettingsController extends AsyncNotifier<Office365Settings> {
   static const _appFolderName = 'DoThing';
   static const _settingsFileName = 'office365_settings.json';
+
+  Directory? _storageDirectory;
+
+  @visibleForTesting
+  void setStorageDirectory(Directory dir) => _storageDirectory = dir;
 
   @override
   Future<Office365Settings> build() async {
@@ -69,14 +75,15 @@ class Office365SettingsController extends AsyncNotifier<Office365Settings> {
   }
 
   Future<File> _getSettingsFile() async {
-    final appData = Platform.environment['APPDATA'];
-    final basePath = (appData != null && appData.isNotEmpty)
-        ? appData
-        : Directory.current.path;
-
-    final settingsDir = Directory(
-      '$basePath${Platform.pathSeparator}$_appFolderName',
-    );
+    final settingsDir =
+        _storageDirectory ??
+        () {
+          final appData = Platform.environment['APPDATA'];
+          final basePath = (appData != null && appData.isNotEmpty)
+              ? appData
+              : Directory.current.path;
+          return Directory('$basePath${Platform.pathSeparator}$_appFolderName');
+        }();
     await settingsDir.create(recursive: true);
 
     return File(
