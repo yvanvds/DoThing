@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../controllers/settings_navigation_controller.dart';
+import 'sections/ai_section.dart';
 import 'sections/office365_section.dart';
 import 'sections/smartschool_section.dart';
 import 'sections/theme_section.dart';
@@ -29,6 +30,12 @@ final _sections = <SettingsSection>[
     title: 'Office 365',
     icon: Icons.mail_lock_outlined,
     builder: (_) => const Office365Section(),
+  ),
+  SettingsSection(
+    id: 'ai',
+    title: 'AI',
+    icon: Icons.smart_toy_outlined,
+    builder: (_) => const AiSection(),
   ),
   // Add more sections here.
 ];

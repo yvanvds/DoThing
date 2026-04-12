@@ -11,12 +11,15 @@ import 'tables/message_participants_table.dart';
 import 'tables/message_attachments_table.dart';
 import 'tables/pending_outgoing_messages_table.dart';
 import 'tables/sync_state_table.dart';
+import 'tables/ai_conversations_table.dart';
+import 'tables/ai_chat_messages_table.dart';
 import 'daos/contacts_dao.dart';
 import 'daos/messages_dao.dart';
 import 'daos/attachments_dao.dart';
 import 'daos/pending_outgoing_messages_dao.dart';
 import 'daos/sync_state_dao.dart';
 import 'daos/search_dao.dart';
+import 'daos/ai_chat_dao.dart';
 
 export 'tables/contacts_table.dart';
 export 'tables/contact_identities_table.dart';
@@ -25,12 +28,15 @@ export 'tables/message_participants_table.dart';
 export 'tables/message_attachments_table.dart';
 export 'tables/pending_outgoing_messages_table.dart';
 export 'tables/sync_state_table.dart';
+export 'tables/ai_conversations_table.dart';
+export 'tables/ai_chat_messages_table.dart';
 export 'daos/contacts_dao.dart';
 export 'daos/messages_dao.dart';
 export 'daos/attachments_dao.dart';
 export 'daos/pending_outgoing_messages_dao.dart';
 export 'daos/sync_state_dao.dart';
 export 'daos/search_dao.dart';
+export 'daos/ai_chat_dao.dart';
 
 part 'app_database.g.dart';
 
@@ -43,6 +49,8 @@ part 'app_database.g.dart';
     MessageAttachments,
     PendingOutgoingMessages,
     SyncState,
+    AiConversations,
+    AiChatMessages,
   ],
   daos: [
     ContactsDao,
@@ -51,13 +59,14 @@ part 'app_database.g.dart';
     PendingOutgoingMessagesDao,
     SyncStateDao,
     SearchDao,
+    AiChatDao,
   ],
 )
 class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -65,6 +74,7 @@ class AppDatabase extends _$AppDatabase {
       await m.createAll();
       await _applySchemaV2Prep();
       await _applySchemaV3Prep();
+      await _applySchemaV4Prep();
       // Create the FTS5 virtual table for message search.
       // This is a standalone (not external-content) table; all indexing is
       // handled explicitly from SearchDao.
@@ -107,6 +117,11 @@ class AppDatabase extends _$AppDatabase {
       if (from < 3) {
         await m.createTable(pendingOutgoingMessages);
         await _applySchemaV3Prep();
+      }
+      if (from < 4) {
+        await m.createTable(aiConversations);
+        await m.createTable(aiChatMessages);
+        await _applySchemaV4Prep();
       }
     },
   );
@@ -161,6 +176,18 @@ class AppDatabase extends _$AppDatabase {
     await customStatement('''
       CREATE INDEX IF NOT EXISTS idx_pending_outgoing_next_attempt
       ON pending_outgoing_messages (next_attempt_at, created_at)
+    ''');
+  }
+
+  Future<void> _applySchemaV4Prep() async {
+    await customStatement('''
+      CREATE INDEX IF NOT EXISTS idx_ai_chat_messages_conversation_created
+      ON ai_chat_messages (conversation_id, created_at)
+    ''');
+
+    await customStatement('''
+      CREATE INDEX IF NOT EXISTS idx_ai_chat_messages_status
+      ON ai_chat_messages (status, updated_at)
     ''');
   }
 

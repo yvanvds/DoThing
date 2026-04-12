@@ -1,9 +1,11 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../database/app_database.dart';
+import '../database/repositories/ai_chat_repository.dart';
 import '../database/repositories/smartschool_sync_repository.dart';
 
 export '../database/app_database.dart';
+export '../database/repositories/ai_chat_repository.dart';
 export '../database/repositories/smartschool_sync_repository.dart';
 
 /// The single shared [AppDatabase] instance for the lifetime of the app.
@@ -24,6 +26,10 @@ final appDatabaseProvider = Provider<AppDatabase>(
 /// Provides a [SmartschoolSyncRepository] backed by the shared database.
 final smartschoolSyncRepositoryProvider = Provider<SmartschoolSyncRepository>(
   (ref) => SmartschoolSyncRepository(ref.watch(appDatabaseProvider)),
+);
+
+final aiChatRepositoryProvider = Provider<AiChatRepository>(
+  (ref) => AiChatRepository(ref.watch(appDatabaseProvider)),
 );
 
 /// Stream provider for inbox messages from the local database.
