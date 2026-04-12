@@ -197,9 +197,14 @@ class _LocalCandidateAccumulator {
   RecipientPersonCandidate toCandidate({required String query}) {
     final lowerName = displayName.toLowerCase();
     final lowerQuery = query.toLowerCase();
-    final score = lowerName.startsWith(lowerQuery)
-        ? 150
-        : (lowerName.contains(lowerQuery) ? 120 : 80);
+    int score;
+    if (lowerName.startsWith(lowerQuery)) {
+      score = 150;
+    } else if (lowerName.contains(lowerQuery)) {
+      score = 120;
+    } else {
+      score = 80;
+    }
 
     return RecipientPersonCandidate(
       displayName: displayName,

@@ -610,12 +610,12 @@ class _SmartschoolMessageListState
           padding: const EdgeInsets.fromLTRB(8, 8, 8, 6),
           child: TextField(
             onChanged: (value) => setState(() => _query = value),
-            decoration: InputDecoration(
+            decoration: const InputDecoration(
               isDense: true,
               hintText: 'Search people',
-              prefixIcon: const Icon(Icons.search, size: 18),
-              border: const OutlineInputBorder(),
-              contentPadding: const EdgeInsets.symmetric(
+              prefixIcon: Icon(Icons.search, size: 18),
+              border: OutlineInputBorder(),
+              contentPadding: EdgeInsets.symmetric(
                 horizontal: 10,
                 vertical: 10,
               ),

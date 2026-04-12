@@ -502,34 +502,7 @@ class _RecipientFieldState extends ConsumerState<RecipientField> {
     }
 
     if (_isEndpointPickerOpen) {
-      final person = _suggestions[_endpointPickerPersonIndex!];
-      return ListView.builder(
-        shrinkWrap: true,
-        itemCount: person.endpoints.length,
-        itemBuilder: (context, index) {
-          final endpoint = person.endpoints[index];
-          final highlighted = index == _endpointPickerEndpointIndex;
-          return ListTile(
-            dense: true,
-            selected: highlighted,
-            leading: Icon(
-              endpoint.kind == RecipientEndpointKind.smartschool
-                  ? Icons.school_outlined
-                  : Icons.alternate_email,
-              size: 18,
-            ),
-            title: Text(endpoint.value),
-            trailing: _Badge(text: endpoint.badgeText),
-            onTap: () {
-              _addChipFromPerson(
-                person,
-                endpoint: endpoint,
-                autoSelectedPreferred: false,
-              );
-            },
-          );
-        },
-      );
+      return _buildEndpointPickerList();
     }
 
     final total = _mainSuggestionCount;
@@ -537,50 +510,97 @@ class _RecipientFieldState extends ConsumerState<RecipientField> {
       return const SizedBox.shrink();
     }
 
+    return _buildMainSuggestionList(total);
+  }
+
+  Widget _buildEndpointPickerList() {
+    final person = _suggestions[_endpointPickerPersonIndex!];
+
+    return ListView.builder(
+      shrinkWrap: true,
+      itemCount: person.endpoints.length,
+      itemBuilder: (context, index) => _buildEndpointPickerRow(person, index),
+    );
+  }
+
+  Widget _buildEndpointPickerRow(RecipientPersonSuggestion person, int index) {
+    final endpoint = person.endpoints[index];
+    final highlighted = index == _endpointPickerEndpointIndex;
+
+    return ListTile(
+      dense: true,
+      selected: highlighted,
+      leading: Icon(
+        endpoint.kind == RecipientEndpointKind.smartschool
+            ? Icons.school_outlined
+            : Icons.alternate_email,
+        size: 18,
+      ),
+      title: Text(endpoint.value),
+      trailing: _Badge(text: endpoint.badgeText),
+      onTap: () {
+        _addChipFromPerson(
+          person,
+          endpoint: endpoint,
+          autoSelectedPreferred: false,
+        );
+      },
+    );
+  }
+
+  Widget _buildMainSuggestionList(int total) {
     return ListView.builder(
       shrinkWrap: true,
       itemCount: total,
       itemBuilder: (context, index) {
         if (index < _suggestions.length) {
-          final person = _suggestions[index];
-          final highlighted = index == _highlightedIndex;
-          final endpointSummary = person.endpoints
-              .take(3)
-              .map((endpoint) => endpoint.badgeText)
-              .join(' , ');
+          return _buildPersonSuggestionRow(index);
+        }
+        return _buildRawEmailSuggestionRow(index);
+      },
+    );
+  }
 
-          return ListTile(
-            dense: true,
-            selected: highlighted,
-            title: Text(person.displayName),
-            subtitle: endpointSummary.isEmpty ? null : Text(endpointSummary),
-            trailing: person.requiresDisambiguation
-                ? const Icon(Icons.chevron_right, size: 18)
-                : _Badge(text: person.preferredEndpoint.badgeText),
-            onTap: () {
-              if (person.requiresDisambiguation) {
-                _openEndpointPickerForIndex(index);
-              } else {
-                _addChipFromPerson(
-                  person,
-                  endpoint: person.preferredEndpoint,
-                  autoSelectedPreferred: true,
-                );
-              }
-            },
+  Widget _buildPersonSuggestionRow(int index) {
+    final person = _suggestions[index];
+    final highlighted = index == _highlightedIndex;
+    final endpointSummary = person.endpoints
+        .take(3)
+        .map((endpoint) => endpoint.badgeText)
+        .join(' , ');
+
+    return ListTile(
+      dense: true,
+      selected: highlighted,
+      title: Text(person.displayName),
+      subtitle: endpointSummary.isEmpty ? null : Text(endpointSummary),
+      trailing: person.requiresDisambiguation
+          ? const Icon(Icons.chevron_right, size: 18)
+          : _Badge(text: person.preferredEndpoint.badgeText),
+      onTap: () {
+        if (person.requiresDisambiguation) {
+          _openEndpointPickerForIndex(index);
+        } else {
+          _addChipFromPerson(
+            person,
+            endpoint: person.preferredEndpoint,
+            autoSelectedPreferred: true,
           );
         }
-
-        final value = _inputController.text.trim();
-        return ListTile(
-          dense: true,
-          selected: index == _highlightedIndex,
-          leading: const Icon(Icons.alternate_email, size: 18),
-          title: Text('Use "$value"'),
-          subtitle: const Text('Direct email recipient'),
-          onTap: () => _addRawEmailChip(value),
-        );
       },
+    );
+  }
+
+  Widget _buildRawEmailSuggestionRow(int index) {
+    final value = _inputController.text.trim();
+
+    return ListTile(
+      dense: true,
+      selected: index == _highlightedIndex,
+      leading: const Icon(Icons.alternate_email, size: 18),
+      title: Text('Use "$value"'),
+      subtitle: const Text('Direct email recipient'),
+      onTap: () => _addRawEmailChip(value),
     );
   }
 }

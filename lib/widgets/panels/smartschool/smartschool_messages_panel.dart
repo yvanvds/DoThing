@@ -80,8 +80,3 @@ class _MessagesPanelState extends ConsumerState<MessagesPanel> {
     return OutlookMessageDetailView(header: selectedHeader);
   }
 }
-
-@Deprecated('Use MessagesPanel instead.')
-class SmartschoolMessagesPanel extends MessagesPanel {
-  const SmartschoolMessagesPanel({super.key});
-}
