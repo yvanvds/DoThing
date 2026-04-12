@@ -1,4 +1,5 @@
 import 'app_command.dart';
+import 'definitions/composer_commands.dart';
 import 'definitions/navigation_commands.dart';
 import 'definitions/status_commands.dart';
 
@@ -9,4 +10,5 @@ import 'definitions/status_commands.dart';
 List<AppCommand> buildCommandRegistry() => [
   ...navigationCommands(),
   ...statusCommands(),
+  ...composerCommands(),
 ];

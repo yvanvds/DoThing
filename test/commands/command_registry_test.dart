@@ -8,7 +8,13 @@ void main() {
 
     expect(
       ids,
-      containsAll({'openChat', 'openSettings', 'openMessages', 'clearStatus'}),
+      containsAll({
+        'openChat',
+        'openSettings',
+        'openMessages',
+        'clearStatus',
+        'newMessage',
+      }),
     );
     expect(commands.length, ids.length);
   });

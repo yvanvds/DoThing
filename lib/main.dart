@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_quill/flutter_quill.dart'
+    show FlutterQuillLocalizations;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'config/theme.dart';
@@ -60,6 +62,7 @@ class MainApp extends ConsumerWidget {
 
     return MaterialApp(
       debugShowCheckedModeBanner: false,
+      localizationsDelegates: const [FlutterQuillLocalizations.delegate],
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       themeMode: themeMode,

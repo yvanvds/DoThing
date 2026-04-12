@@ -25,6 +25,7 @@ dependencies:
     git:
       url: https://github.com/yvanvds/dartschool.git
       ref: main
+  flutter_quill: ^11.5.0
   
 
 

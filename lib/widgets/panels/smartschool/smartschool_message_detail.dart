@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../controllers/composer_controller.dart';
+import '../../../controllers/composer_visibility_controller.dart';
 import '../../../models/smartschool_message.dart';
 import '../../../controllers/status_controller.dart';
 import '../../../providers/database_provider.dart';
@@ -575,10 +577,8 @@ class SmartschoolMessageDetailView extends ConsumerWidget {
             preprocessHtml: _fixRelativeImageUrls,
           ),
         ),
-        if (attachments.isNotEmpty) ...[
-          const Divider(height: 1),
-          _buildAttachmentsRow(context, ref, attachments),
-        ],
+        if (attachments.isNotEmpty) const Divider(height: 1),
+        _buildAttachmentsRow(context, ref, attachments),
       ],
     );
   }
@@ -596,79 +596,98 @@ class SmartschoolMessageDetailView extends ConsumerWidget {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       color: colorScheme.surface,
-      child: Align(
-        alignment: Alignment.centerRight,
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: attachments.map((attachment) {
-              final visual = _attachmentVisual(attachment, colorScheme);
-              return Padding(
-                padding: const EdgeInsets.only(left: 8),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(10),
-                  onTap: () => _handleAttachmentTap(context, ref, attachment),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 9,
-                    ),
-                    decoration: BoxDecoration(
-                      color: colorScheme.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: visual.tint.withValues(alpha: 0.35),
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 32,
-                          height: 32,
-                          decoration: BoxDecoration(
-                            color: visual.tint.withValues(alpha: 0.14),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Icon(
-                            visual.icon,
-                            size: 18,
-                            color: visual.tint,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 220),
-                              child: Text(
-                                attachment.name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: textTheme.bodySmall?.copyWith(
-                                  fontWeight: FontWeight.w600,
+      child: Row(
+        children: [
+          TextButton.icon(
+            onPressed: () {
+              ref.read(composerProvider.notifier).reset();
+              ref.read(composerVisibilityProvider.notifier).open();
+            },
+            icon: const Icon(Icons.edit_outlined, size: 16),
+            label: const Text('New message'),
+            style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+          ),
+          if (attachments.isNotEmpty)
+            Expanded(
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: attachments.map((attachment) {
+                      final visual = _attachmentVisual(attachment, colorScheme);
+                      return Padding(
+                        padding: const EdgeInsets.only(left: 8),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(10),
+                          onTap: () =>
+                              _handleAttachmentTap(context, ref, attachment),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 9,
+                            ),
+                            decoration: BoxDecoration(
+                              color: colorScheme.surfaceContainerHighest,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: visual.tint.withValues(alpha: 0.35),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 32,
+                                  height: 32,
+                                  decoration: BoxDecoration(
+                                    color: visual.tint.withValues(alpha: 0.14),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Icon(
+                                    visual.icon,
+                                    size: 18,
+                                    color: visual.tint,
+                                  ),
                                 ),
-                              ),
+                                const SizedBox(width: 10),
+                                Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    ConstrainedBox(
+                                      constraints: const BoxConstraints(
+                                        maxWidth: 220,
+                                      ),
+                                      child: Text(
+                                        attachment.name,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: textTheme.bodySmall?.copyWith(
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                    Text(
+                                      _formatAttachmentSize(attachment),
+                                      style: textTheme.labelSmall?.copyWith(
+                                        color: colorScheme.outline,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
                             ),
-                            Text(
-                              _formatAttachmentSize(attachment),
-                              style: textTheme.labelSmall?.copyWith(
-                                color: colorScheme.outline,
-                              ),
-                            ),
-                          ],
+                          ),
                         ),
-                      ],
-                    ),
+                      );
+                    }).toList(),
                   ),
                 ),
-              );
-            }).toList(),
-          ),
-        ),
+              ),
+            ),
+        ],
       ),
     );
   }

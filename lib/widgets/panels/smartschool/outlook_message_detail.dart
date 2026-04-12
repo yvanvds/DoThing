@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../controllers/composer_controller.dart';
+import '../../../controllers/composer_visibility_controller.dart';
 import '../../../controllers/status_controller.dart';
 import '../../../providers/database_provider.dart';
 import '../../../services/office365/office365_mail_service.dart';
@@ -458,7 +460,24 @@ class _OutlookMessageDetailViewState
               ),
             ),
           Expanded(child: _buildBodyPanel(body, colorScheme)),
+          const Divider(height: 1),
+          _buildNewMessageRow(),
         ],
+      ),
+    );
+  }
+
+  Widget _buildNewMessageRow() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: TextButton.icon(
+        onPressed: () {
+          ref.read(composerProvider.notifier).reset();
+          ref.read(composerVisibilityProvider.notifier).open();
+        },
+        icon: const Icon(Icons.edit_outlined, size: 16),
+        label: const Text('New message'),
+        style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
       ),
     );
   }

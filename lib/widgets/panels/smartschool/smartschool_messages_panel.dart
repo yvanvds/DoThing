@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:multi_split_view/multi_split_view.dart';
 
+import '../../../controllers/composer_visibility_controller.dart';
 import '../../../services/smartschool/smartschool_messages_controller.dart';
 import '../../../services/smartschool/smartschool_selected_message_controller.dart';
+import '../composer/composer_panel.dart';
 import 'outlook_message_detail.dart';
 import 'smartschool_message_detail.dart';
 import 'smartschool_message_list.dart';
@@ -30,6 +32,7 @@ class _MessagesPanelState extends ConsumerState<MessagesPanel> {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final selectedHeader = ref.watch(smartschoolSelectedMessageProvider);
+    final composerOpen = ref.watch(composerVisibilityProvider);
 
     return MultiSplitView(
       axis: Axis.horizontal,
@@ -46,7 +49,9 @@ class _MessagesPanelState extends ConsumerState<MessagesPanel> {
 
         return Container(
           color: colorScheme.surfaceContainerLow,
-          child: _buildSelectedHeaderView(context, colorScheme, selectedHeader),
+          child: composerOpen
+              ? const ComposerPanel()
+              : _buildSelectedHeaderView(context, colorScheme, selectedHeader),
         );
       },
     );
