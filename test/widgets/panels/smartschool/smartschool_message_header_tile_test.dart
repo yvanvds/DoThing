@@ -165,6 +165,156 @@ void main() {
               as _FakeMessagesController;
       expect(fakeMessages.markUnreadCalls, isEmpty);
     });
+
+    testWidgets('trash action uses Office365 service for outlook message', (
+      tester,
+    ) async {
+      final container = ProviderContainer(
+        overrides: [
+          smartschoolMessagesProvider.overrideWith(_FakeMessagesController.new),
+          smartschoolInboxProvider.overrideWith(_FakeInboxController.new),
+          office365MailServiceProvider.overrideWith(
+            _FakeOffice365MailService.new,
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final removedIds = <int>[];
+
+      final header = _header(id: 404, source: 'outlook', unread: false);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            home: Scaffold(
+              body: SmartschoolMessageHeaderTile(
+                header: header,
+                onRemoveFromList: removedIds.add,
+                onHeaderUpdated: (_) {},
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      addTearDown(gesture.removePointer);
+      await gesture.addPointer();
+      await gesture.moveTo(
+        tester.getCenter(find.byType(SmartschoolMessageHeaderTile)),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('Delete'));
+      await tester.pumpAndSettle();
+
+      final fakeOffice365 =
+          container.read(office365MailServiceProvider)
+              as _FakeOffice365MailService;
+      expect(fakeOffice365.deleteCalls, [404]);
+      expect(removedIds, [404]);
+    });
+
+    testWidgets('mark as unread on read smartschool message updates header', (
+      tester,
+    ) async {
+      final fakeMessages = _FakeMessagesController();
+      final container = ProviderContainer(
+        overrides: [
+          smartschoolMessagesProvider.overrideWith(() => fakeMessages),
+          smartschoolInboxProvider.overrideWith(_FakeInboxController.new),
+          office365MailServiceProvider.overrideWith(
+            _FakeOffice365MailService.new,
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final updatedHeaders = <SmartschoolMessageHeader>[];
+
+      final header = _header(id: 505, source: 'smartschool', unread: false);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            home: Scaffold(
+              body: SmartschoolMessageHeaderTile(
+                header: header,
+                onRemoveFromList: (_) {},
+                onHeaderUpdated: updatedHeaders.add,
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      addTearDown(gesture.removePointer);
+      await gesture.addPointer();
+      await gesture.moveTo(
+        tester.getCenter(find.byType(SmartschoolMessageHeaderTile)),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('Mark as unread'));
+      await tester.pumpAndSettle();
+
+      final fakeInbox =
+          container.read(smartschoolInboxProvider.notifier)
+              as _FakeInboxController;
+
+      expect(fakeMessages.markUnreadCalls, [505]);
+      expect(fakeInbox.refreshHeadersCalls, 1);
+      expect(updatedHeaders, hasLength(1));
+      expect(updatedHeaders.single.unread, isTrue);
+    });
+
+    testWidgets('archive failure shows snackbar', (tester) async {
+      final fakeMessages = _FakeMessagesController(throwOnArchive: true);
+      final container = ProviderContainer(
+        overrides: [
+          smartschoolMessagesProvider.overrideWith(() => fakeMessages),
+          smartschoolInboxProvider.overrideWith(_FakeInboxController.new),
+          office365MailServiceProvider.overrideWith(
+            _FakeOffice365MailService.new,
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final header = _header(id: 606, source: 'smartschool', unread: false);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            home: Scaffold(
+              body: SmartschoolMessageHeaderTile(
+                header: header,
+                onRemoveFromList: (_) {},
+                onHeaderUpdated: (_) {},
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      addTearDown(gesture.removePointer);
+      await gesture.addPointer();
+      await gesture.moveTo(
+        tester.getCenter(find.byType(SmartschoolMessageHeaderTile)),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('Archive'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Failed to archive:'), findsOneWidget);
+    });
   });
 }
 
@@ -194,8 +344,13 @@ SmartschoolMessageHeader _header({
 }
 
 class _FakeMessagesController extends SmartschoolMessagesController {
+  _FakeMessagesController({this.throwOnArchive = false});
+
+  final bool throwOnArchive;
   final List<int> markReadCalls = [];
   final List<int> markUnreadCalls = [];
+  final List<dynamic> archiveCalls = [];
+  final List<int> trashCalls = [];
 
   @override
   void build() {}
@@ -211,10 +366,17 @@ class _FakeMessagesController extends SmartschoolMessagesController {
   }
 
   @override
-  Future<void> archive(dynamic messageId) async {}
+  Future<void> trash(int messageId) async {
+    trashCalls.add(messageId);
+  }
 
   @override
-  Future<void> trash(int messageId) async {}
+  Future<void> archive(dynamic messageId) async {
+    if (throwOnArchive) {
+      throw StateError('archive failed');
+    }
+    archiveCalls.add(messageId);
+  }
 }
 
 class _FakeInboxController extends SmartschoolInboxController {
@@ -243,6 +405,9 @@ class _FakeOffice365MailService extends Office365MailService {
   _FakeOffice365MailService(super.ref);
 
   final List<int> archiveCalls = [];
+  final List<int> deleteCalls = [];
+  final List<int> markReadCalls = [];
+  final List<int> markUnreadCalls = [];
 
   @override
   Future<void> archiveMessage(int localMessageId) async {
@@ -250,11 +415,17 @@ class _FakeOffice365MailService extends Office365MailService {
   }
 
   @override
-  Future<void> deleteMessage(int localMessageId) async {}
+  Future<void> deleteMessage(int localMessageId) async {
+    deleteCalls.add(localMessageId);
+  }
 
   @override
-  Future<void> markMessageRead(int localMessageId) async {}
+  Future<void> markMessageRead(int localMessageId) async {
+    markReadCalls.add(localMessageId);
+  }
 
   @override
-  Future<void> markMessageUnread(int localMessageId) async {}
+  Future<void> markMessageUnread(int localMessageId) async {
+    markUnreadCalls.add(localMessageId);
+  }
 }

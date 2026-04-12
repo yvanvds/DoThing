@@ -5,13 +5,92 @@ import 'package:flutter_smartschool/flutter_smartschool.dart';
 import '../../models/smartschool_message.dart';
 import 'smartschool_bridge_exception.dart';
 
+abstract class SmartschoolSessionApi {
+  Future<void> ensureAuthenticated();
+  Future<void> clearCookies();
+}
+
+abstract class SmartschoolMessagesApi {
+  Future<List<ShortMessage>> getHeaders({
+    required BoxType boxType,
+    required List<int> alreadySeenIds,
+  });
+
+  Future<FullMessage?> getMessage(int messageId);
+  Future<List<dynamic>> getAttachments(int messageId);
+  Future<void> markUnread(int messageId);
+  Future<void> setLabel(int messageId, MessageLabel label);
+  Future<void> moveToArchive(List<int> messageIds);
+  Future<void> moveToTrash(int messageId);
+}
+
+class _SmartschoolSessionClientAdapter implements SmartschoolSessionApi {
+  _SmartschoolSessionClientAdapter(this._client);
+
+  final SmartschoolClient _client;
+
+  @override
+  Future<void> ensureAuthenticated() => _client.ensureAuthenticated();
+
+  @override
+  Future<void> clearCookies() => _client.clearCookies();
+}
+
+class _SmartschoolMessagesServiceAdapter implements SmartschoolMessagesApi {
+  _SmartschoolMessagesServiceAdapter(this._service);
+
+  final MessagesService _service;
+
+  @override
+  Future<List<ShortMessage>> getHeaders({
+    required BoxType boxType,
+    required List<int> alreadySeenIds,
+  }) => _service.getHeaders(boxType: boxType, alreadySeenIds: alreadySeenIds);
+
+  @override
+  Future<FullMessage?> getMessage(int messageId) =>
+      _service.getMessage(messageId);
+
+  @override
+  Future<List<dynamic>> getAttachments(int messageId) =>
+      _service.getAttachments(messageId);
+
+  @override
+  Future<void> markUnread(int messageId) => _service.markUnread(messageId);
+
+  @override
+  Future<void> setLabel(int messageId, MessageLabel label) =>
+      _service.setLabel(messageId, label);
+
+  @override
+  Future<void> moveToArchive(List<int> messageIds) =>
+      _service.moveToArchive(messageIds);
+
+  @override
+  Future<void> moveToTrash(int messageId) => _service.moveToTrash(messageId);
+}
+
 /// Compatibility bridge that adapts `flutter_smartschool` to the app's
 /// existing Smartschool DTOs and controller contracts.
 class SmartschoolBridge {
-  SmartschoolBridge._(this._client) : _messages = MessagesService(_client);
+  SmartschoolBridge._({
+    SmartschoolClient? client,
+    required SmartschoolSessionApi session,
+    required SmartschoolMessagesApi messages,
+  }) : _client = client,
+       _session = session,
+       _messages = messages;
 
-  final SmartschoolClient _client;
-  final MessagesService _messages;
+  SmartschoolBridge.forTesting({
+    required SmartschoolSessionApi session,
+    required SmartschoolMessagesApi messages,
+  }) : _client = null,
+       _session = session,
+       _messages = messages;
+
+  final SmartschoolClient? _client;
+  final SmartschoolSessionApi _session;
+  final SmartschoolMessagesApi _messages;
   final List<String> _stderrLog = [];
 
   /// Kept for backward compatibility with existing debug UI.
@@ -36,7 +115,11 @@ class SmartschoolBridge {
         ),
       );
       await client.ensureAuthenticated();
-      return SmartschoolBridge._(client);
+      return SmartschoolBridge._(
+        client: client,
+        session: _SmartschoolSessionClientAdapter(client),
+        messages: _SmartschoolMessagesServiceAdapter(MessagesService(client)),
+      );
     } catch (error) {
       throw SmartschoolBridgeException(error.toString());
     }
@@ -44,7 +127,7 @@ class SmartschoolBridge {
 
   Future<bool> ping() async {
     try {
-      await _client.ensureAuthenticated();
+      await _session.ensureAuthenticated();
       return true;
     } catch (_) {
       return false;
@@ -60,7 +143,7 @@ class SmartschoolBridge {
     String mfa = '',
   }) async {
     try {
-      await _client.ensureAuthenticated();
+      await _session.ensureAuthenticated();
     } catch (error) {
       throw SmartschoolBridgeException(error.toString());
     }
@@ -68,7 +151,7 @@ class SmartschoolBridge {
 
   Future<void> logout() async {
     try {
-      await _client.clearCookies();
+      await _session.clearCookies();
     } catch (error) {
       throw SmartschoolBridgeException(error.toString());
     }
@@ -76,7 +159,7 @@ class SmartschoolBridge {
 
   Future<bool> isAuthenticated() async {
     try {
-      await _client.ensureAuthenticated();
+      await _session.ensureAuthenticated();
       return true;
     } catch (_) {
       return false;
@@ -188,7 +271,13 @@ class SmartschoolBridge {
           'Attachment with fileId $attachmentIndex was not found.',
         ),
       );
-      final bytes = await selected.download(_client);
+      final client = _client;
+      if (client == null) {
+        throw SmartschoolBridgeException(
+          'Attachment download requires a live Smartschool client.',
+        );
+      }
+      final bytes = await selected.download(client);
       return SmartschoolAttachment(
         index: selected.fileId,
         name: selected.name,

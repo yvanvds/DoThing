@@ -1,4 +1,5 @@
 import 'package:do_thing/services/office365/office365_mail_service.dart';
+import 'package:do_thing/models/office365_settings.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -40,6 +41,70 @@ void main() {
       );
 
       expect(plain, 'Hello world &team<x>');
+    });
+
+    test('formEncode escapes keys and values', () {
+      final encoded = Office365MailServiceUtils.formEncode({
+        'client id': 'abc 123',
+        'redirect_uri': 'http://127.0.0.1/callback?x=1',
+      });
+
+      expect(
+        encoded,
+        'client+id=abc+123&redirect_uri=http%3A%2F%2F127.0.0.1%2Fcallback%3Fx%3D1',
+      );
+    });
+
+    test('validateSettings accepts valid settings', () {
+      const settings = Office365Settings(
+        tenantId: 'tenant',
+        clientId: 'client',
+        redirectPort: 8080,
+      );
+
+      expect(
+        () => Office365MailServiceUtils.validateSettings(settings),
+        returnsNormally,
+      );
+    });
+
+    test('validateSettings rejects missing tenant id', () {
+      const settings = Office365Settings(
+        tenantId: '  ',
+        clientId: 'client',
+        redirectPort: 8080,
+      );
+
+      expect(
+        () => Office365MailServiceUtils.validateSettings(settings),
+        throwsA(isA<StateError>()),
+      );
+    });
+
+    test('validateSettings rejects missing client id', () {
+      const settings = Office365Settings(
+        tenantId: 'tenant',
+        clientId: ' ',
+        redirectPort: 8080,
+      );
+
+      expect(
+        () => Office365MailServiceUtils.validateSettings(settings),
+        throwsA(isA<StateError>()),
+      );
+    });
+
+    test('validateSettings rejects invalid redirect port', () {
+      const settings = Office365Settings(
+        tenantId: 'tenant',
+        clientId: 'client',
+        redirectPort: 0,
+      );
+
+      expect(
+        () => Office365MailServiceUtils.validateSettings(settings),
+        throwsA(isA<StateError>()),
+      );
     });
   });
 }

@@ -57,6 +57,25 @@ class Office365MailServiceUtils {
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
   }
+
+  static String formEncode(Map<String, String> values) => values.entries
+      .map(
+        (entry) =>
+            '${Uri.encodeQueryComponent(entry.key)}=${Uri.encodeQueryComponent(entry.value)}',
+      )
+      .join('&');
+
+  static void validateSettings(Office365Settings settings) {
+    if (settings.tenantId.trim().isEmpty) {
+      throw StateError('Office 365 tenant ID is required.');
+    }
+    if (settings.clientId.trim().isEmpty) {
+      throw StateError('Office 365 client ID is required.');
+    }
+    if (settings.redirectPort <= 0) {
+      throw StateError('Office 365 redirect port must be greater than 0.');
+    }
+  }
 }
 
 class _InboxDeltaStart {
@@ -1166,24 +1185,11 @@ class Office365MailService {
     }
   }
 
-  String _formEncode(Map<String, String> values) => values.entries
-      .map(
-        (entry) =>
-            '${Uri.encodeQueryComponent(entry.key)}=${Uri.encodeQueryComponent(entry.value)}',
-      )
-      .join('&');
+  String _formEncode(Map<String, String> values) =>
+      Office365MailServiceUtils.formEncode(values);
 
-  void _validateSettings(Office365Settings settings) {
-    if (settings.tenantId.trim().isEmpty) {
-      throw StateError('Office 365 tenant ID is required.');
-    }
-    if (settings.clientId.trim().isEmpty) {
-      throw StateError('Office 365 client ID is required.');
-    }
-    if (settings.redirectPort <= 0) {
-      throw StateError('Office 365 redirect port must be greater than 0.');
-    }
-  }
+  void _validateSettings(Office365Settings settings) =>
+      Office365MailServiceUtils.validateSettings(settings);
 
   String _normalizedScopes(String rawScopes) {
     return Office365MailServiceUtils.normalizedScopes(rawScopes);
