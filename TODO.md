@@ -11,7 +11,7 @@ Review copilot-instructions.md and see if we can improve it based on what we are
 # feature implementation
 
 ## General interface
-If the internet connection is bad, logging in to smartschool fails. This means messages are not retrieved on startup. We should add something to retry the login.
+If the internet connection is bad, logging in to smartschool fails. This means messages are not retrieved on startup. We should add something to retry the login. Also it seems like smartschool is only tried once. And then we give up. For now I mostly succeed loggin in,  if I restart the app a few times. So most likely a few retries, maybe after waiting a few seconds. Say we try like five times before we give up. And add a command 'restart connection'.
 
 ## Message composer
 Add options to forward and reply to messages. But first we need to check smartschool. See if reply and sending new mail is really something different.

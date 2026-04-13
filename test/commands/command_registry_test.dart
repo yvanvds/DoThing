@@ -13,6 +13,7 @@ void main() {
         'openSettings',
         'openMessages',
         'clearStatus',
+        'restartConnection',
         'newMessage',
       }),
     );

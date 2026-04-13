@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../controllers/smartschool_settings_controller.dart';
@@ -24,6 +26,9 @@ enum SmartschoolConnectionState { disconnected, initializing, connected }
 /// ```
 class SmartschoolAuthController
     extends AsyncNotifier<SmartschoolConnectionState> {
+  static const int _maxLoginAttempts = 5;
+  static const Duration _retryDelay = Duration(seconds: 3);
+
   SmartschoolBridge? _bridge;
   int _loginAttemptCounter = 0;
 
@@ -83,42 +88,73 @@ class SmartschoolAuthController
       );
     }
 
-    final attemptNumber = ++_loginAttemptCounter;
-    final attemptStartedAt = DateTime.now();
-
     state = const AsyncData(SmartschoolConnectionState.initializing);
-
-    state = await AsyncValue.guard(() async {
-      final normalizedUrl = _normalizeMainUrl(settings.url);
-
-      status.add(
-        StatusEntryType.info,
-        'Connecting to Smartschool at $normalizedUrl (attempt #$attemptNumber)…',
-      );
-      _bridge = await SmartschoolBridge.connect(
-        username: settings.username,
-        password: settings.password,
-        mainUrl: normalizedUrl,
-        mfa: settings.mfaSecret,
-      );
-      final elapsed = DateTime.now().difference(attemptStartedAt);
-      status.add(
-        StatusEntryType.success,
-        'Logged in to Smartschool on attempt #$attemptNumber after ${elapsed.inMilliseconds} ms.',
-      );
-
-      return SmartschoolConnectionState.connected;
-    });
-
-    if (state is AsyncError) {
-      final asyncError = state as AsyncError<SmartschoolConnectionState>;
-      final elapsed = DateTime.now().difference(attemptStartedAt);
-      status.add(
-        StatusEntryType.error,
-        '${_friendlyAuthError(asyncError.error)} (attempt #$attemptNumber, ${elapsed.inMilliseconds} ms)',
-      );
+    String normalizedUrl;
+    try {
+      normalizedUrl = _normalizeMainUrl(settings.url);
+    } catch (error) {
+      status.add(StatusEntryType.error, _friendlyAuthError(error));
       state = const AsyncData(SmartschoolConnectionState.disconnected);
+      return;
     }
+
+    final attemptStartedAt = DateTime.now();
+    Object? lastError;
+
+    for (var attempt = 1; attempt <= _maxLoginAttempts; attempt++) {
+      final attemptNumber = ++_loginAttemptCounter;
+      try {
+        status.add(
+          StatusEntryType.info,
+          'Connecting to Smartschool at $normalizedUrl (attempt $attempt/$_maxLoginAttempts)…',
+        );
+
+        _bridge = await createBridge(
+          username: settings.username,
+          password: settings.password,
+          mainUrl: normalizedUrl,
+          mfa: settings.mfaSecret,
+        );
+
+        final elapsed = DateTime.now().difference(attemptStartedAt);
+        status.add(
+          StatusEntryType.success,
+          'Logged in to Smartschool on attempt #$attemptNumber after ${elapsed.inMilliseconds} ms.',
+        );
+        state = const AsyncData(SmartschoolConnectionState.connected);
+        return;
+      } catch (error) {
+        lastError = error;
+        if (attempt < _maxLoginAttempts) {
+          status.add(
+            StatusEntryType.warning,
+            'Smartschool login attempt $attempt/$_maxLoginAttempts failed. Retrying in ${_retryDelay.inSeconds} seconds…',
+          );
+          await Future<void>.delayed(_retryDelay);
+        }
+      }
+    }
+
+    final elapsed = DateTime.now().difference(attemptStartedAt);
+    status.add(
+      StatusEntryType.error,
+      '${_friendlyAuthError(lastError ?? 'Unknown error')} (after $_maxLoginAttempts attempts, ${elapsed.inMilliseconds} ms)',
+    );
+    state = const AsyncData(SmartschoolConnectionState.disconnected);
+  }
+
+  Future<SmartschoolBridge> createBridge({
+    required String username,
+    required String password,
+    required String mainUrl,
+    String? mfa,
+  }) {
+    return SmartschoolBridge.connect(
+      username: username,
+      password: password,
+      mainUrl: mainUrl,
+      mfa: mfa,
+    );
   }
 
   String _friendlyAuthError(Object error) {
