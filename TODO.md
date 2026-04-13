@@ -14,11 +14,11 @@ Review copilot-instructions.md and see if we can improve it based on what we are
 If the internet connection is bad, logging in to smartschool fails. This means messages are not retrieved on startup. We should add something to retry the login.
 
 ## Message composer
-
+Add options to forward and reply to messages. But first we need to check smartschool. See if reply and sending new mail is really something different.
 
 
 ## AI chat
-
+How are we going to continue here? Just orchestration seems limited. I think it would mean we have very strict actions coupled to buttons. Like 'reply to this email' or 'what should i do today'. A less strict AI which behaves more as a bot  might be preferable. Maybe we should expose most of the app features and then some to the 
 
 ## Outlook
 Downloading attachements seems to fail

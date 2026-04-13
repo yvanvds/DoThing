@@ -19,6 +19,10 @@ const _kOffice365Source = 'outlook';
 const _kMicrosoftLoginHost = 'login.microsoftonline.com';
 const _kOutlookBodyContentTypeHeader = 'outlook.body-content-type="html"';
 const _kOutlookMessageNotFound = 'Outlook message not found in local database.';
+final _kGraphApiBaseUri = Uri.parse('https://graph.microsoft.com/v1.0');
+
+typedef SaveDownloadedFile =
+    Future<File> Function(String fileName, List<int> bytes);
 
 class Office365MailServiceUtils {
   static String normalizedScopes(String rawScopes) {
@@ -118,9 +122,17 @@ class _InboxSyncProgress {
 }
 
 class Office365MailService {
-  Office365MailService(this.ref);
+  Office365MailService(
+    this.ref, {
+    Uri? graphApiBaseUri,
+    SaveDownloadedFile? saveDownloadedFile,
+  }) : _graphApiBaseUri = graphApiBaseUri ?? _kGraphApiBaseUri,
+       _saveDownloadedFile =
+           saveDownloadedFile ?? DownloadsFileStore.saveToDownloads;
 
   final Ref ref;
+  final Uri _graphApiBaseUri;
+  final SaveDownloadedFile _saveDownloadedFile;
 
   Future<void> sendMail({
     required List<String> toRecipients,
@@ -145,7 +157,7 @@ class Office365MailService {
 
     await _sendWithoutResponseBody(
       method: 'POST',
-      uri: Uri.parse('https://graph.microsoft.com/v1.0/me/sendMail'),
+      uri: _graphUri('/me/sendMail'),
       headers: {'Authorization': 'Bearer $token'},
       body: {'message': message, 'saveToSentItems': true},
     );
@@ -163,7 +175,7 @@ class Office365MailService {
     final encodedId = Uri.encodeComponent(local.externalId);
 
     await _postJson(
-      Uri.parse('https://graph.microsoft.com/v1.0/me/messages/$encodedId/move'),
+      _graphUri('/me/messages/$encodedId/move'),
       headers: {'Authorization': 'Bearer $token'},
       body: {'destinationId': 'archive'},
     );
@@ -185,7 +197,7 @@ class Office365MailService {
 
     await _sendWithoutResponseBody(
       method: 'DELETE',
-      uri: Uri.parse('https://graph.microsoft.com/v1.0/me/messages/$encodedId'),
+      uri: _graphUri('/me/messages/$encodedId'),
       headers: {'Authorization': 'Bearer $token'},
     );
 
@@ -526,10 +538,13 @@ class Office365MailService {
 
     final token = await _ensureValidAccessToken();
     final encodedId = Uri.encodeComponent(local.externalId);
-    final uri = Uri.parse(
-      'https://graph.microsoft.com/v1.0/me/messages/$encodedId'
-      r'?$select=id,subject,body,bodyPreview,isRead,hasAttachments,from,receivedDateTime'
-      r'&$expand=attachments',
+    final uri = _graphUri(
+      '/me/messages/$encodedId',
+      queryParameters: {
+        r'$select':
+            'id,subject,body,bodyPreview,isRead,hasAttachments,from,receivedDateTime',
+        r'$expand': 'attachments',
+      },
     );
 
     final payload = await _getJson(
@@ -642,9 +657,11 @@ class Office365MailService {
     final token = await _ensureValidAccessToken();
     final encodedMessageId = Uri.encodeComponent(local.externalId);
     final encodedAttachmentId = Uri.encodeComponent(externalAttachmentId);
-    final uri = Uri.parse(
-      'https://graph.microsoft.com/v1.0/me/messages/$encodedMessageId/attachments/$encodedAttachmentId'
-      '?\$select=id,name,contentType,size,isInline,contentId,contentBytes',
+    final uri = _graphUri(
+      '/me/messages/$encodedMessageId/attachments/$encodedAttachmentId',
+      queryParameters: {
+        r'$select': 'id,name,contentType,size,isInline,contentId,contentBytes',
+      },
     );
 
     try {
@@ -663,7 +680,7 @@ class Office365MailService {
       final bytes = base64Decode(base64);
       final filename = (payload['name'] as String? ?? attachment.filename)
           .trim();
-      final file = await DownloadsFileStore.saveToDownloads(
+      final file = await _saveDownloadedFile(
         filename.isEmpty ? attachment.filename : filename,
         bytes,
       );
@@ -691,7 +708,7 @@ class Office365MailService {
 
     await _sendWithoutResponseBody(
       method: 'PATCH',
-      uri: Uri.parse('https://graph.microsoft.com/v1.0/me/messages/$encodedId'),
+      uri: _graphUri('/me/messages/$encodedId'),
       headers: {
         'Authorization': 'Bearer $token',
         'Content-Type': 'application/json',
@@ -831,10 +848,14 @@ class Office365MailService {
     required int top,
   }) {
     final effectiveTop = top <= 0 ? 1 : top;
-    final uri = Uri.parse(
-      'https://graph.microsoft.com/v1.0/me/messages'
-      '?\$top=$effectiveTop&\$orderby=receivedDateTime%20desc'
-      '&\$select=id,subject,receivedDateTime,bodyPreview,isRead,hasAttachments,from',
+    final uri = _graphUri(
+      '/me/messages',
+      queryParameters: {
+        r'$top': '$effectiveTop',
+        r'$orderby': 'receivedDateTime desc',
+        r'$select':
+            'id,subject,receivedDateTime,bodyPreview,isRead,hasAttachments,from',
+      },
     );
 
     return _getJson(
@@ -847,8 +868,13 @@ class Office365MailService {
   }
 
   String _deltaSeedUrl() {
-    return 'https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages/delta'
-        '?\$select=id,subject,receivedDateTime,bodyPreview,isRead,hasAttachments,from';
+    return _graphUri(
+      '/me/mailFolders/inbox/messages/delta',
+      queryParameters: {
+        r'$select':
+            'id,subject,receivedDateTime,bodyPreview,isRead,hasAttachments,from',
+      },
+    ).toString();
   }
 
   OutlookLatestMessage? _parseLatestMessage(Map<String, dynamic> raw) {
@@ -1045,8 +1071,9 @@ class Office365MailService {
     }
 
     final profile = await _getJson(
-      Uri.parse(
-        'https://graph.microsoft.com/v1.0/me?%24select=displayName,mail,userPrincipalName',
+      _graphUri(
+        '/me',
+        queryParameters: {r'$select': 'displayName,mail,userPrincipalName'},
       ),
       headers: {'Authorization': 'Bearer $accessToken'},
     );
@@ -1254,6 +1281,16 @@ class Office365MailService {
           },
         )
         .toList(growable: false);
+  }
+
+  Uri _graphUri(String path, {Map<String, String>? queryParameters}) {
+    final basePath = _graphApiBaseUri.path.endsWith('/')
+        ? _graphApiBaseUri.path.substring(0, _graphApiBaseUri.path.length - 1)
+        : _graphApiBaseUri.path;
+    return _graphApiBaseUri.replace(
+      path: '$basePath$path',
+      queryParameters: queryParameters,
+    );
   }
 }
 
