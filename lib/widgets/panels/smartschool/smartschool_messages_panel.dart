@@ -64,11 +64,25 @@ class _MessagesPanelState extends ConsumerState<MessagesPanel> {
   ) {
     if (selectedHeader == null) {
       return Center(
-        child: Text(
-          'Select an item to view details',
-          style: Theme.of(
-            context,
-          ).textTheme.bodyMedium?.copyWith(color: colorScheme.outline),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Opacity(
+              opacity: 0.78,
+              child: Image.asset(
+                'assets/background.png',
+                width: 240,
+                fit: BoxFit.contain,
+              ),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              'Select an item to view details',
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: colorScheme.outline),
+            ),
+          ],
         ),
       );
     }

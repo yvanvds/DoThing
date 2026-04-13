@@ -28,10 +28,13 @@ class ContextPanel extends ConsumerWidget {
 
   Widget _buildContent(ContextView view, ColorScheme colorScheme) {
     return switch (view) {
-      ContextView.empty => Center(
-        child: Text(
-          'Context Panel',
-          style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 13),
+      ContextView.empty => SizedBox.expand(
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Opacity(
+            opacity: 0.78,
+            child: Image.asset('assets/background.png', fit: BoxFit.contain),
+          ),
         ),
       ),
       ContextView.settings => const SettingsPage(),
