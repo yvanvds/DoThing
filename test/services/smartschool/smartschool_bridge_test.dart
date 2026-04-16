@@ -42,23 +42,28 @@ void main() {
       expect(messages.archivedIds, isEmpty);
     });
 
-    test('markUnread, setLabel, and trash delegate to messages API', () async {
-      final messages = _FakeMessagesApi();
-      final bridge = SmartschoolBridge.forTesting(
-        session: _FakeSessionApi(),
-        messages: messages,
-      );
+    test(
+      'markRead, markUnread, setLabel, and trash delegate to messages API',
+      () async {
+        final messages = _FakeMessagesApi();
+        final bridge = SmartschoolBridge.forTesting(
+          session: _FakeSessionApi(),
+          messages: messages,
+        );
 
-      await bridge.markUnread(10);
-      await bridge.setLabel(11, SmartschoolMessageLabel.blueFlag);
-      await bridge.trash(12);
+        await bridge.markRead(9);
+        await bridge.markUnread(10);
+        await bridge.setLabel(11, SmartschoolMessageLabel.blueFlag);
+        await bridge.trash(12);
 
-      expect(messages.markUnreadCalls, [10]);
-      expect(messages.trashCalls, [12]);
-      expect(messages.setLabelCalls, hasLength(1));
-      expect(messages.setLabelCalls.single.messageId, 11);
-      expect(messages.setLabelCalls.single.label, MessageLabel.blueFlag);
-    });
+        expect(messages.markReadCalls, [9]);
+        expect(messages.markUnreadCalls, [10]);
+        expect(messages.trashCalls, [12]);
+        expect(messages.setLabelCalls, hasLength(1));
+        expect(messages.setLabelCalls.single.messageId, 11);
+        expect(messages.setLabelCalls.single.label, MessageLabel.blueFlag);
+      },
+    );
 
     test('ping and isAuthenticated reflect session success/failure', () async {
       final okBridge = SmartschoolBridge.forTesting(
@@ -90,6 +95,33 @@ void main() {
         );
       },
     );
+
+    test(
+      'startInboxEventDrivenDetection throws without live client context',
+      () async {
+        final bridge = SmartschoolBridge.forTesting(
+          session: _FakeSessionApi(),
+          messages: _FakeMessagesApi(),
+        );
+
+        await expectLater(
+          () => bridge.startInboxEventDrivenDetection(
+            seenIds: const [1, 2],
+            onNewHeaders: (_) async {},
+          ),
+          throwsA(isA<SmartschoolBridgeException>()),
+        );
+      },
+    );
+
+    test('stopInboxEventDrivenDetection is safe when never started', () async {
+      final bridge = SmartschoolBridge.forTesting(
+        session: _FakeSessionApi(),
+        messages: _FakeMessagesApi(),
+      );
+
+      await bridge.stopInboxEventDrivenDetection();
+    });
   });
 }
 
@@ -123,9 +155,15 @@ class _FakeSessionApi implements SmartschoolSessionApi {
 
 class _FakeMessagesApi implements SmartschoolMessagesApi {
   final List<int> archivedIds = [];
+  final List<int> markReadCalls = [];
   final List<int> markUnreadCalls = [];
   final List<int> trashCalls = [];
   final List<_SetLabelCall> setLabelCalls = [];
+
+  @override
+  Future<void> markRead(int messageId) async {
+    markReadCalls.add(messageId);
+  }
 
   @override
   Future<void> markUnread(int messageId) async {

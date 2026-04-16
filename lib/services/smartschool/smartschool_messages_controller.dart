@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'dart:async';
 
 import '../../controllers/status_controller.dart';
 import '../../models/smartschool_message.dart';
@@ -103,11 +104,25 @@ class SmartschoolMessagesController extends Notifier<void> {
   }
 
   /// Mark a message as read.
-  ///
-  /// Smartschool exposes this implicitly through "show message".
-  /// Triggering message fetch ensures backend read state is updated.
   Future<void> markRead(int messageId) async {
-    await _bridge.getMessage(messageId);
+    await _bridge.markRead(messageId);
+  }
+
+  Future<void> startEventDrivenInboxDetection({
+    required Iterable<int> seenIds,
+    required FutureOr<void> Function(List<SmartschoolMessageHeader>)
+    onNewHeaders,
+    void Function(Object error)? onError,
+  }) async {
+    await _bridge.startInboxEventDrivenDetection(
+      seenIds: seenIds,
+      onNewHeaders: onNewHeaders,
+      onError: onError,
+    );
+  }
+
+  Future<void> stopEventDrivenInboxDetection() async {
+    await _bridge.stopInboxEventDrivenDetection();
   }
 
   /// Set a label / flag colour on a message.

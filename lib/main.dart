@@ -8,12 +8,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'config/theme.dart';
 import 'controllers/theme_mode_controller.dart';
 import 'providers/database_provider.dart';
+import 'services/system_notification_service.dart';
 import 'widgets/app_shell.dart';
 
 Future<void> main() async {
   runZonedGuarded(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
+      await SystemNotificationService.initialize();
       final db = AppDatabase.openInAppSupport();
 
       runApp(

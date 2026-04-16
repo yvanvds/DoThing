@@ -3,66 +3,92 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../controllers/status_controller.dart';
-import '../../models/smartschool_message.dart';
 import '../../providers/database_provider.dart';
+import '../system_notification_service.dart';
 import 'smartschool_messages_controller.dart';
 
-/// Manages polling for new messages every 5 minutes.
+/// Manages event-driven detection for new Smartschool messages.
 ///
-/// Tracks already-seen message IDs and periodically fetches new ones.
-/// Uses client-side filtering to ensure only truly new messages are shown.
+/// Tracks already-seen message IDs, seeds the incremental baseline on startup,
+/// and then reacts to new message counter events from flutter_smartschool.
 /// New messages are accumulated in the state.
 class SmartschoolPollingController
     extends Notifier<List<SmartschoolMessageHeader>> {
-  Timer? _pollTimer;
   final Set<int> _seenIds = {};
   bool _isPolling = false;
+  SmartschoolMessagesController? _messagesController;
 
   @override
   List<SmartschoolMessageHeader> build() {
     ref.onDispose(() {
-      _pollTimer?.cancel();
+      unawaited(_stopEventDetection());
     });
     return [];
   }
 
   /// Initialize polling with a set of already-seen message IDs.
   ///
-  /// This prepares the polling mechanism and returns immediately.
-  /// The actual polling timer starts on the first call.
+  /// This prepares the event-driven mechanism and returns immediately.
+  /// The event stream listener starts on the first call.
   void initializeWithSeenIds(List<int> seenIds) {
     _seenIds.clear();
     _seenIds.addAll(seenIds);
-    _startPollingIfNeeded();
+    _startEventDetectionIfNeeded();
   }
 
-  /// Start polling if not already running.
-  void _startPollingIfNeeded() {
-    if (_isPolling || _pollTimer != null) {
+  /// Start event-driven detection if not already running.
+  void _startEventDetectionIfNeeded() {
+    if (_isPolling) {
       return;
     }
 
     _isPolling = true;
 
-    // Wait one full interval before first poll, since inbox was just fetched on startup.
-    _pollTimer = Timer.periodic(const Duration(minutes: 5), (_) {
-      _pollOnce();
+    Future<void>.microtask(() async {
+      try {
+        if (!ref.mounted) {
+          _isPolling = false;
+          return;
+        }
+
+        final messagesService = ref.read(smartschoolMessagesProvider.notifier);
+        _messagesController = messagesService;
+        await messagesService.startEventDrivenInboxDetection(
+          seenIds: _seenIds,
+          onNewHeaders: _onEventHeaders,
+          onError: (error) {
+            if (!ref.mounted) return;
+            ref
+                .read(statusProvider.notifier)
+                .add(
+                  StatusEntryType.warning,
+                  'Smartschool event stream error: $error',
+                );
+          },
+        );
+      } catch (error) {
+        _isPolling = false;
+        _messagesController = null;
+        if (!ref.mounted) {
+          return;
+        }
+        ref
+            .read(statusProvider.notifier)
+            .add(
+              StatusEntryType.warning,
+              'Smartschool event detection start failed: $error',
+            );
+      }
     });
   }
 
-  /// Perform a single poll for new messages.
-  Future<void> _pollOnce() async {
+  /// Process headers detected by the event-driven inbox refresh.
+  Future<void> _onEventHeaders(
+    List<SmartschoolMessageHeader> allMessages,
+  ) async {
     var foundNewMessages = false;
 
     try {
-      final messagesService = ref.read(smartschoolMessagesProvider.notifier);
-
-      // Fetch all messages (don't rely on server-side filtering).
-      final allMessages = await messagesService.getHeaders(
-        boxType: SmartschoolBoxType.inbox,
-        alreadySeenIds: const [],
-      );
-
       // Persist all fetched headers to the local database (idempotent upsert).
       // This runs before the in-memory new-message check so the DB stays in
       // sync regardless of how the UI layer tracks state.
@@ -74,12 +100,12 @@ class SmartschoolPollingController
             .read(statusProvider.notifier)
             .add(
               StatusEntryType.info,
-              'Smartschool poll sync: ${allMessages.length} headers scanned · $persisted new/updated persisted.',
+              'Smartschool event sync: ${allMessages.length} headers scanned · $persisted new/updated persisted.',
             );
       } catch (error) {
         ref
             .read(statusProvider.notifier)
-            .add(StatusEntryType.warning, 'Polling local sync failed: $error');
+            .add(StatusEntryType.warning, 'Event local sync failed: $error');
       }
 
       // Filter client-side: only messages not in our local cache are truly new.
@@ -106,13 +132,22 @@ class SmartschoolPollingController
               StatusEntryType.info,
               '📬 ${newMessages.length} new $msg arrived.',
             );
+
+        final notifier = ref.read(systemNotificationServiceProvider);
+        for (final message in newMessages) {
+          unawaited(
+            notifier.showSmartschoolMessageReceived(
+              subject: message.subject,
+              sender: message.from,
+            ),
+          );
+        }
       }
     } catch (e) {
-      // Silently fail on poll error; will try again next interval
-      // (Avoid spamming the user with notifications for polling errors)
+      // Silently fail on event processing errors.
     }
 
-    // Emit a state change on every poll tick so listeners can refresh UI.
+    // Emit a state change on every event tick so listeners can refresh UI.
     if (!foundNewMessages) {
       state = [...state];
     }
@@ -125,8 +160,26 @@ class SmartschoolPollingController
 
   /// Stop polling.
   void stopPolling() {
-    _pollTimer?.cancel();
-    _pollTimer = null;
+    unawaited(_stopEventDetection());
+  }
+
+  Future<void> _stopEventDetection() async {
+    if (!_isPolling) return;
+
+    try {
+      final messagesService = _messagesController;
+      if (messagesService != null) {
+        await messagesService.stopEventDrivenInboxDetection();
+      } else if (ref.mounted) {
+        await ref
+            .read(smartschoolMessagesProvider.notifier)
+            .stopEventDrivenInboxDetection();
+      }
+    } catch (_) {
+      // Best effort during shutdown.
+    }
+
+    _messagesController = null;
     _isPolling = false;
   }
 }

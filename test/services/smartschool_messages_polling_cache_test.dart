@@ -1,7 +1,7 @@
 import 'dart:collection';
+import 'dart:async';
 
 import 'package:drift/native.dart';
-import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:do_thing/models/smartschool_message.dart';
@@ -10,6 +10,7 @@ import 'package:do_thing/services/smartschool/smartschool_bridge.dart';
 import 'package:do_thing/services/smartschool/smartschool_message_cache_controller.dart';
 import 'package:do_thing/services/smartschool/smartschool_messages_controller.dart';
 import 'package:do_thing/services/smartschool/smartschool_polling_controller.dart';
+import 'package:do_thing/services/system_notification_service.dart';
 import 'package:do_thing/controllers/status_controller.dart';
 
 class _FakeBridge implements SmartschoolBridge {
@@ -34,6 +35,10 @@ class _QueueMessagesController extends SmartschoolMessagesController {
   _QueueMessagesController(this._batches);
 
   final Queue<List<SmartschoolMessageHeader>> _batches;
+  FutureOr<void> Function(List<SmartschoolMessageHeader>)? _onNewHeaders;
+  int startCalls = 0;
+  int stopCalls = 0;
+  List<int> latestSeenIds = const [];
 
   @override
   void build() {}
@@ -47,6 +52,42 @@ class _QueueMessagesController extends SmartschoolMessagesController {
       return const [];
     }
     return _batches.removeFirst();
+  }
+
+  @override
+  Future<void> startEventDrivenInboxDetection({
+    required Iterable<int> seenIds,
+    required FutureOr<void> Function(List<SmartschoolMessageHeader>)
+    onNewHeaders,
+    void Function(Object error)? onError,
+  }) async {
+    startCalls++;
+    latestSeenIds = seenIds.toList();
+    _onNewHeaders = onNewHeaders;
+  }
+
+  @override
+  Future<void> stopEventDrivenInboxDetection() async {
+    stopCalls++;
+    _onNewHeaders = null;
+  }
+
+  Future<void> emitNewHeaders(List<SmartschoolMessageHeader> headers) async {
+    final callback = _onNewHeaders;
+    if (callback == null) return;
+    await callback(headers);
+  }
+}
+
+class _FakeSystemNotificationService extends SystemNotificationService {
+  final List<({String subject, String sender})> shown = [];
+
+  @override
+  Future<void> showSmartschoolMessageReceived({
+    required String subject,
+    required String sender,
+  }) async {
+    shown.add((subject: subject, sender: sender));
   }
 }
 
@@ -182,35 +223,42 @@ void main() {
   });
 
   group('SmartschoolPollingController', () {
-    test('poll tick accumulates only unseen messages', () {
+    test('event update accumulates only unseen messages', () async {
       final db = AppDatabase(NativeDatabase.memory());
       addTearDown(db.close);
 
-      final queuedBatches = Queue<List<SmartschoolMessageHeader>>.from([
-        [_header(id: 1, unread: true), _header(id: 2, unread: true)],
-      ]);
+      final queuedBatches = Queue<List<SmartschoolMessageHeader>>.from([]);
+      final fakeMessages = _QueueMessagesController(queuedBatches);
+      final fakeNotifications = _FakeSystemNotificationService();
 
       final container = ProviderContainer(
         overrides: [
           appDatabaseProvider.overrideWithValue(db),
-          smartschoolMessagesProvider.overrideWith(
-            () => _QueueMessagesController(queuedBatches),
+          smartschoolMessagesProvider.overrideWith(() => fakeMessages),
+          systemNotificationServiceProvider.overrideWithValue(
+            fakeNotifications,
           ),
         ],
       );
       addTearDown(container.dispose);
 
-      fakeAsync((async) {
-        final notifier = container.read(smartschoolPollingProvider.notifier);
-        notifier.initializeWithSeenIds([1]);
+      final notifier = container.read(smartschoolPollingProvider.notifier);
+      notifier.initializeWithSeenIds([1]);
+      await Future<void>.delayed(Duration.zero);
 
-        async.elapse(const Duration(minutes: 5));
-        async.flushMicrotasks();
-      });
+      await fakeMessages.emitNewHeaders([
+        _header(id: 1, unread: true),
+        _header(id: 2, unread: true),
+      ]);
 
       final polled = container.read(smartschoolPollingProvider);
       expect(polled, hasLength(1));
       expect(polled.first.id, 2);
+      expect(fakeMessages.startCalls, 1);
+      expect(fakeMessages.latestSeenIds, [1]);
+      expect(fakeNotifications.shown, hasLength(1));
+      expect(fakeNotifications.shown.first.subject, 'Subject 2');
+      expect(fakeNotifications.shown.first.sender, 'Teacher');
 
       final statusEntries = container.read(statusProvider);
       expect(
@@ -223,34 +271,63 @@ void main() {
       );
     });
 
-    test('clearNew empties accumulated new messages', () {
+    test('clearNew empties accumulated new messages', () async {
       final db = AppDatabase(NativeDatabase.memory());
       addTearDown(db.close);
 
-      final queuedBatches = Queue<List<SmartschoolMessageHeader>>.from([
-        [_header(id: 10, unread: true)],
-      ]);
+      final queuedBatches = Queue<List<SmartschoolMessageHeader>>.from([]);
+      final fakeMessages = _QueueMessagesController(queuedBatches);
+      final fakeNotifications = _FakeSystemNotificationService();
 
       final container = ProviderContainer(
         overrides: [
           appDatabaseProvider.overrideWithValue(db),
-          smartschoolMessagesProvider.overrideWith(
-            () => _QueueMessagesController(queuedBatches),
+          smartschoolMessagesProvider.overrideWith(() => fakeMessages),
+          systemNotificationServiceProvider.overrideWithValue(
+            fakeNotifications,
           ),
         ],
       );
       addTearDown(container.dispose);
 
-      fakeAsync((async) {
-        final notifier = container.read(smartschoolPollingProvider.notifier);
-        notifier.initializeWithSeenIds([]);
-        async.elapse(const Duration(minutes: 5));
-        async.flushMicrotasks();
-      });
+      final notifier = container.read(smartschoolPollingProvider.notifier);
+      notifier.initializeWithSeenIds([]);
+      await Future<void>.delayed(Duration.zero);
+
+      await fakeMessages.emitNewHeaders([_header(id: 10, unread: true)]);
 
       expect(container.read(smartschoolPollingProvider), hasLength(1));
       container.read(smartschoolPollingProvider.notifier).clearNew();
       expect(container.read(smartschoolPollingProvider), isEmpty);
+      expect(fakeNotifications.shown, hasLength(1));
+    });
+
+    test('stopPolling stops event-driven detection subscription', () async {
+      final db = AppDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+
+      final queuedBatches = Queue<List<SmartschoolMessageHeader>>.from([]);
+      final fakeMessages = _QueueMessagesController(queuedBatches);
+
+      final container = ProviderContainer(
+        overrides: [
+          appDatabaseProvider.overrideWithValue(db),
+          smartschoolMessagesProvider.overrideWith(() => fakeMessages),
+          systemNotificationServiceProvider.overrideWithValue(
+            _FakeSystemNotificationService(),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final notifier = container.read(smartschoolPollingProvider.notifier);
+      notifier.initializeWithSeenIds(const []);
+      await Future<void>.delayed(Duration.zero);
+
+      notifier.stopPolling();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(fakeMessages.stopCalls, 1);
     });
   });
 }

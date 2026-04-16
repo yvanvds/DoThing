@@ -54,6 +54,9 @@ class _NoopSessionApi implements SmartschoolSessionApi {
 
 class _NoopMessagesApi implements SmartschoolMessagesApi {
   @override
+  Future<void> markRead(int messageId) async {}
+
+  @override
   Future<void> markUnread(int messageId) async {}
 
   @override

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 
 import 'package:flutter_smartschool/flutter_smartschool.dart';
 
@@ -29,6 +30,7 @@ abstract class SmartschoolMessagesApi {
 
   Future<FullMessage?> getMessage(int messageId);
   Future<List<dynamic>> getAttachments(int messageId);
+  Future<void> markRead(int messageId);
   Future<void> markUnread(int messageId);
   Future<void> setLabel(int messageId, MessageLabel label);
   Future<void> moveToArchive(List<int> messageIds);
@@ -71,11 +73,13 @@ class _SmartschoolMessagesServiceAdapter implements SmartschoolMessagesApi {
     required String subject,
     required String bodyHtml,
   }) => _service.sendMessage(
-    to: to,
-    cc: cc,
-    bcc: bcc,
-    subject: subject,
-    bodyHtml: bodyHtml,
+    SendMessageParams(
+      to: to,
+      cc: cc,
+      bcc: bcc,
+      subject: subject,
+      bodyHtml: bodyHtml,
+    ),
   );
 
   @override
@@ -85,6 +89,9 @@ class _SmartschoolMessagesServiceAdapter implements SmartschoolMessagesApi {
   @override
   Future<List<dynamic>> getAttachments(int messageId) =>
       _service.getAttachments(messageId);
+
+  @override
+  Future<void> markRead(int messageId) => _service.markRead(messageId);
 
   @override
   Future<void> markUnread(int messageId) => _service.markUnread(messageId);
@@ -108,21 +115,27 @@ class SmartschoolBridge {
     SmartschoolClient? client,
     required SmartschoolSessionApi session,
     required SmartschoolMessagesApi messages,
+    MessagesService? eventMessages,
   }) : _client = client,
        _session = session,
-       _messages = messages;
+       _messages = messages,
+       _eventMessages = eventMessages;
 
   SmartschoolBridge.forTesting({
     required SmartschoolSessionApi session,
     required SmartschoolMessagesApi messages,
   }) : _client = null,
        _session = session,
-       _messages = messages;
+       _messages = messages,
+       _eventMessages = null;
 
   final SmartschoolClient? _client;
   final SmartschoolSessionApi _session;
   final SmartschoolMessagesApi _messages;
+  final MessagesService? _eventMessages;
   final List<String> _stderrLog = [];
+  StreamSubscription<MessageCounterUpdate>? _messageCounterSubscription;
+  bool _messageCounterBound = false;
 
   /// Kept for backward compatibility with existing debug UI.
   ///
@@ -146,10 +159,12 @@ class SmartschoolBridge {
         ),
       );
       await client.ensureAuthenticated();
+      final messagesService = MessagesService(client);
       return SmartschoolBridge._(
         client: client,
         session: _SmartschoolSessionClientAdapter(client),
-        messages: _SmartschoolMessagesServiceAdapter(MessagesService(client)),
+        messages: _SmartschoolMessagesServiceAdapter(messagesService),
+        eventMessages: MessagesService(client),
       );
     } catch (error) {
       throw SmartschoolBridgeException(error.toString());
@@ -361,6 +376,63 @@ class SmartschoolBridge {
     }
   }
 
+  Future<void> markRead(int messageId) async {
+    try {
+      await _messages.markRead(messageId);
+    } catch (error) {
+      throw SmartschoolBridgeException(error.toString());
+    }
+  }
+
+  Future<void> startInboxEventDrivenDetection({
+    required Iterable<int> seenIds,
+    required FutureOr<void> Function(List<SmartschoolMessageHeader>)
+    onNewHeaders,
+    void Function(Object error)? onError,
+  }) async {
+    final eventMessages = _eventMessages;
+    final client = _client;
+    if (eventMessages == null || client == null) {
+      throw SmartschoolBridgeException(
+        'Event-driven detection requires a live Smartschool client.',
+      );
+    }
+
+    try {
+      eventMessages.seedIncrementalSeenIds(seenIds, boxType: BoxType.inbox);
+
+      if (!_messageCounterBound) {
+        eventMessages.bindNotificationCounterStream(
+          client.notificationCounterUpdates,
+        );
+        _messageCounterBound = true;
+      }
+
+      await _messageCounterSubscription?.cancel();
+      _messageCounterSubscription = eventMessages.messageCounterUpdates.listen((
+        update,
+      ) async {
+        try {
+          final headers = await eventMessages.refreshHeadersOnMessageCounter(
+            update,
+            boxType: BoxType.inbox,
+          );
+          if (headers.isEmpty) return;
+          await onNewHeaders(headers.map(_toHeader).toList());
+        } catch (error) {
+          onError?.call(error);
+        }
+      }, onError: onError);
+    } catch (error) {
+      throw SmartschoolBridgeException(error.toString());
+    }
+  }
+
+  Future<void> stopInboxEventDrivenDetection() async {
+    await _messageCounterSubscription?.cancel();
+    _messageCounterSubscription = null;
+  }
+
   Future<void> setLabel(int messageId, SmartschoolMessageLabel label) async {
     try {
       await _messages.setLabel(messageId, _mapLabel(label));
@@ -392,7 +464,11 @@ class SmartschoolBridge {
     }
   }
 
-  void dispose() {}
+  void dispose() {
+    _messageCounterSubscription?.cancel();
+    _messageCounterSubscription = null;
+    _eventMessages?.dispose();
+  }
 
   BoxType _mapBoxType(SmartschoolBoxType boxType) {
     switch (boxType) {

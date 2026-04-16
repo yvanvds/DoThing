@@ -20,6 +20,10 @@ Add options to forward and reply to messages. But first we need to check smartsc
 ## AI chat
 How are we going to continue here? Just orchestration seems limited. I think it would mean we have very strict actions coupled to buttons. Like 'reply to this email' or 'what should i do today'. A less strict AI which behaves more as a bot  might be preferable. Maybe we should expose most of the app features and then some to the 
 
+Right now we just keep continuing the same chat session. We need to be able to start a new session. Right now we have a chat button in the side bar and an open chat command. The action they are linked to doesn't do anything yet. I want a new panel that can be displayed in the context panel. Is should be displayed by clicking the chat button or dhe open chat command (rename to open chat history).
+
+In there we can show a history of stored conversations. With the ability to reopen them and delete them. And a button to end the current conversation and start a new one. Also, on app start do not load the last conversation but start with a new chat session.
+
 ## Outlook
 Downloading attachements seems to fail
 

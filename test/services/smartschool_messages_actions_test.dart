@@ -12,12 +12,16 @@ class _FakeBridge implements SmartschoolBridge {
   dynamic archivedPayload;
   int? labeledId;
   SmartschoolMessageLabel? labeledValue;
-  int getMessageCalls = 0;
-  int? lastGetMessageId;
+  int? markedReadId;
 
   @override
   Future<void> markUnread(int messageId) async {
     markedUnreadId = messageId;
+  }
+
+  @override
+  Future<void> markRead(int messageId) async {
+    markedReadId = messageId;
   }
 
   @override
@@ -38,8 +42,6 @@ class _FakeBridge implements SmartschoolBridge {
 
   @override
   Future<List<SmartschoolMessageDetail>> getMessage(int messageId) async {
-    getMessageCalls++;
-    lastGetMessageId = messageId;
     return const [
       SmartschoolMessageDetail(
         id: 1,
@@ -155,13 +157,12 @@ void main() {
       );
     });
 
-    test('markRead triggers getMessage bridge call', () async {
+    test('markRead delegates to bridge markRead', () async {
       final svc = container.read(smartschoolMessagesProvider.notifier);
 
       await svc.markRead(14);
 
-      expect(bridge.getMessageCalls, 1);
-      expect(bridge.lastGetMessageId, 14);
+      expect(bridge.markedReadId, 14);
     });
   });
 }
