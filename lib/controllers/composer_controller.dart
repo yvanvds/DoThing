@@ -30,6 +30,9 @@ class ComposerController extends Notifier<DraftMessage> {
   void updateBody(List<Map<String, dynamic>> body) =>
       state = state.copyWith(body: body);
 
+  /// Replaces the full draft with a prefilled one (reply/forward workflows).
+  void replace(DraftMessage draft) => state = draft;
+
   /// Resets the draft to a blank state.
   void reset() => state = DraftMessage();
 }

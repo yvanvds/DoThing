@@ -542,7 +542,7 @@ class Office365MailService {
       '/me/messages/$encodedId',
       queryParameters: {
         r'$select':
-            'id,subject,body,bodyPreview,isRead,hasAttachments,from,receivedDateTime',
+            'id,subject,body,bodyPreview,isRead,hasAttachments,from,toRecipients,ccRecipients,bccRecipients,receivedDateTime',
         r'$expand': 'attachments',
       },
     );
@@ -616,15 +616,67 @@ class Office365MailService {
       );
     }
 
-    await db.messagesDao.replaceParticipants(local.id, [
+    final participants = <MessageParticipantsCompanion>[
       MessageParticipantsCompanion.insert(
         messageId: local.id,
         role: 'sender',
+        position: const Value(0),
         displayNameSnapshot: senderName,
         contactId: Value(senderContactId),
         addressSnapshot: Value(senderAddress.isEmpty ? null : senderAddress),
       ),
-    ]);
+    ];
+
+    Future<void> appendRecipients(dynamic raw, String role) async {
+      if (raw is! List) {
+        return;
+      }
+
+      for (final (index, recipient) in raw.indexed) {
+        if (recipient is! Map<String, dynamic>) {
+          continue;
+        }
+
+        final emailAddress = recipient['emailAddress'];
+        if (emailAddress is! Map<String, dynamic>) {
+          continue;
+        }
+
+        final displayName =
+            (emailAddress['name'] as String? ?? '').trim().isNotEmpty
+            ? (emailAddress['name'] as String).trim()
+            : ((emailAddress['address'] as String?) ?? '').trim();
+        final address = ((emailAddress['address'] as String?) ?? '')
+            .trim()
+            .toLowerCase();
+        if (displayName.isEmpty || address.isEmpty) {
+          continue;
+        }
+
+        final contactId = await db.contactsDao.upsertIdentity(
+          source: _kOffice365Source,
+          externalId: address,
+          displayName: displayName,
+        );
+
+        participants.add(
+          MessageParticipantsCompanion.insert(
+            messageId: local.id,
+            role: role,
+            position: Value(index),
+            displayNameSnapshot: displayName,
+            contactId: Value(contactId),
+            addressSnapshot: Value(address),
+          ),
+        );
+      }
+    }
+
+    await appendRecipients(payload['toRecipients'], 'to');
+    await appendRecipients(payload['ccRecipients'], 'cc');
+    await appendRecipients(payload['bccRecipients'], 'bcc');
+
+    await db.messagesDao.replaceParticipants(local.id, participants);
 
     ref
         .read(statusProvider.notifier)

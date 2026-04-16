@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_quill/flutter_quill.dart';
+import 'package:flutter_quill_extensions/flutter_quill_extensions.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../controllers/composer_controller.dart';
+import '../../../controllers/smartschool_settings_controller.dart';
 
 /// Rich text body editor for the message composer.
 ///
@@ -45,10 +48,72 @@ class _ComposerBodyState extends ConsumerState<ComposerBody> {
     super.dispose();
   }
 
+  String _normalizeSmartschoolBaseUrl(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) {
+      return '';
+    }
+
+    final withScheme = trimmed.contains('://') ? trimmed : 'https://$trimmed';
+    final parsed = Uri.tryParse(withScheme);
+    if (parsed == null || parsed.host.isEmpty) {
+      return '';
+    }
+
+    return Uri(
+      scheme: parsed.scheme.isEmpty ? 'https' : parsed.scheme,
+      host: parsed.host,
+    ).toString();
+  }
+
+  String _resolveSmartschoolImageUrl(String source, String smartschoolBaseUrl) {
+    final value = source.trim();
+    if (value.isEmpty) {
+      return value;
+    }
+
+    final parsed = Uri.tryParse(value);
+    if (parsed != null && parsed.hasScheme) {
+      return value;
+    }
+
+    if (value.startsWith('/public/') && smartschoolBaseUrl.isNotEmpty) {
+      return '$smartschoolBaseUrl$value';
+    }
+
+    return value;
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final seedColor = colorScheme.primary;
+    final smartschoolUrl =
+        ref.watch(smartschoolSettingsProvider).asData?.value.url ?? '';
+    final smartschoolBaseUrl = _normalizeSmartschoolBaseUrl(smartschoolUrl);
+
+    final embedBuilders = FlutterQuillEmbeds.editorBuilders(
+      imageEmbedConfig: QuillEditorImageEmbedConfig(
+        imageProviderBuilder: (context, imageUrl) {
+          final resolved = _resolveSmartschoolImageUrl(
+            imageUrl,
+            smartschoolBaseUrl,
+          );
+          final parsed = Uri.tryParse(resolved);
+          if (parsed != null && parsed.hasScheme) {
+            return NetworkImage(resolved);
+          }
+          return null;
+        },
+      ),
+    );
+    final customStyles = DefaultStyles(
+      link: TextStyle(
+        color: colorScheme.primary,
+        decoration: TextDecoration.underline,
+        decorationColor: colorScheme.primary,
+      ),
+    );
 
     return Column(
       children: [
@@ -99,9 +164,20 @@ class _ComposerBodyState extends ConsumerState<ComposerBody> {
                 child: QuillEditor.basic(
                   controller: _quillController,
                   focusNode: _focusNode,
-                  config: const QuillEditorConfig(
-                    padding: EdgeInsets.all(12),
+                  config: QuillEditorConfig(
+                    padding: const EdgeInsets.all(12),
                     expands: true,
+                    embedBuilders: embedBuilders,
+                    customStyles: customStyles,
+                    onLaunchUrl: (url) async {
+                      final uri = Uri.tryParse(url);
+                      if (uri != null) {
+                        await launchUrl(
+                          uri,
+                          mode: LaunchMode.externalApplication,
+                        );
+                      }
+                    },
                   ),
                 ),
               ),

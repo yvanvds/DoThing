@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_smartschool/flutter_smartschool.dart';
+import 'package:vsc_quill_delta_to_html/vsc_quill_delta_to_html.dart';
 
 import '../../controllers/status_controller.dart';
 import '../../models/draft_message.dart';
@@ -392,30 +393,16 @@ class ComposerMessageSender {
   }
 
   String _deltaToHtml(List<Map<String, dynamic>> delta) {
-    final plainText = StringBuffer();
-    for (final op in delta) {
-      final insert = op['insert'];
-      if (insert is String) {
-        plainText.write(insert);
-      }
-    }
-
-    final normalized = plainText.toString().replaceAll('\r\n', '\n').trim();
-    if (normalized.isEmpty) {
+    if (delta.isEmpty) {
       return '<p></p>';
     }
 
-    final escaped = _escapeHtml(normalized).replaceAll('\n', '<br/>');
-    return '<p>$escaped</p>';
-  }
-
-  String _escapeHtml(String value) {
-    return value
-        .replaceAll('&', '&amp;')
-        .replaceAll('<', '&lt;')
-        .replaceAll('>', '&gt;')
-        .replaceAll('"', '&quot;')
-        .replaceAll("'", '&#39;');
+    final converter = QuillDeltaToHtmlConverter(
+      delta,
+      ConverterOptions.forEmail(),
+    );
+    final html = converter.convert().trim();
+    return html.isEmpty ? '<p></p>' : html;
   }
 }
 

@@ -27,6 +27,8 @@ class OpenAiChatTransport implements AiChatTransport {
       'messages': request.messages
           .map((m) => {'role': _toOpenAiRole(m.role), 'content': m.content})
           .toList(),
+      if (request.jsonObjectResponse)
+        'response_format': {'type': 'json_object'},
     };
 
     HttpClient? client;

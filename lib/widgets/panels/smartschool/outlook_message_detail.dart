@@ -10,8 +10,10 @@ import '../../../controllers/composer_controller.dart';
 import '../../../controllers/composer_visibility_controller.dart';
 import '../../../controllers/status_controller.dart';
 import '../../../providers/database_provider.dart';
+import '../../../services/composer/composer_prefill_service.dart';
 import '../../../services/office365/office365_mail_service.dart';
 import '../../../services/smartschool/smartschool_messages_controller.dart';
+import '../composer/prefill_summary_progress_dialog.dart';
 import 'widgets/message_html_body_view.dart';
 
 class OutlookMessageDetailView extends ConsumerStatefulWidget {
@@ -470,16 +472,117 @@ class _OutlookMessageDetailViewState
   Widget _buildNewMessageRow() {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
-      child: TextButton.icon(
-        onPressed: () {
-          ref.read(composerProvider.notifier).reset();
-          ref.read(composerVisibilityProvider.notifier).open();
-        },
-        icon: const Icon(Icons.edit_outlined, size: 16),
-        label: const Text('New message'),
-        style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+      child: Row(
+        children: [
+          TextButton.icon(
+            onPressed: () {
+              ref.read(composerProvider.notifier).reset();
+              ref.read(composerVisibilityProvider.notifier).open();
+            },
+            icon: const Icon(Icons.edit_outlined, size: 16),
+            label: const Text('New message'),
+            style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+          ),
+          IconButton(
+            onPressed: () =>
+                unawaited(_prefillComposerAction(ComposerPrefillAction.reply)),
+            icon: const Icon(Icons.reply_outlined, size: 18),
+            tooltip: 'Reply',
+            visualDensity: VisualDensity.compact,
+          ),
+          IconButton(
+            onPressed: () => unawaited(
+              _prefillComposerAction(ComposerPrefillAction.replyAll),
+            ),
+            icon: const Icon(Icons.reply_all_outlined, size: 18),
+            tooltip: 'Reply all',
+            visualDensity: VisualDensity.compact,
+          ),
+          IconButton(
+            onPressed: () => unawaited(
+              _prefillComposerAction(ComposerPrefillAction.forward),
+            ),
+            icon: const Icon(Icons.forward_outlined, size: 18),
+            tooltip: 'Forward',
+            visualDensity: VisualDensity.compact,
+          ),
+        ],
       ),
     );
+  }
+
+  Future<void> _prefillComposerAction(ComposerPrefillAction action) async {
+    try {
+      final service = ref.read(composerPrefillServiceProvider);
+      final cancellationToken = ComposerPrefillCancellationToken();
+      final needsSummaryOverlay =
+          action == ComposerPrefillAction.reply ||
+          action == ComposerPrefillAction.replyAll;
+
+      if (!needsSummaryOverlay) {
+        await service.applyFromSelected(
+          action,
+          cancellationToken: cancellationToken,
+        );
+        return;
+      }
+
+      final navigator = Navigator.of(context, rootNavigator: true);
+      var dialogOpen = true;
+      Object? taskError;
+      StackTrace? taskStackTrace;
+      final done = Completer<void>();
+
+      unawaited(() async {
+        try {
+          await service.applyFromSelected(
+            action,
+            cancellationToken: cancellationToken,
+          );
+        } catch (error, stackTrace) {
+          taskError = error;
+          taskStackTrace = stackTrace;
+        } finally {
+          done.complete();
+          if (dialogOpen && mounted && navigator.canPop()) {
+            navigator.pop(false);
+          }
+        }
+      }());
+
+      final canceled =
+          await showDialog<bool>(
+            context: context,
+            barrierDismissible: false,
+            builder: (dialogContext) {
+              return PrefillSummaryProgressDialog(
+                onCancel: () {
+                  cancellationToken.cancel();
+                  Navigator.of(dialogContext, rootNavigator: true).pop(true);
+                },
+              );
+            },
+          ) ??
+          false;
+      dialogOpen = false;
+
+      await done.future;
+
+      if (canceled || taskError is ComposerPrefillCanceledException) {
+        ref
+            .read(statusProvider.notifier)
+            .add(StatusEntryType.info, 'Reply prefill canceled.');
+        return;
+      }
+
+      if (taskError != null) {
+        Error.throwWithStackTrace(taskError!, taskStackTrace!);
+      }
+    } catch (error) {
+      ref
+          .read(statusProvider.notifier)
+          .add(StatusEntryType.error, 'Could not prefill draft: $error');
+    }
   }
 
   Widget _buildToolbar(

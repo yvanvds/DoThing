@@ -6,12 +6,14 @@ class AiCompletionRequest {
     required this.messages,
     required this.stream,
     this.context,
+    this.jsonObjectResponse = false,
   });
 
   final String model;
   final List<AiChatMessageModel> messages;
   final bool stream;
   final AiRequestContext? context;
+  final bool jsonObjectResponse;
 }
 
 class AiStreamEvent {
