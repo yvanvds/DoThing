@@ -73,24 +73,22 @@ class AiChatController extends AsyncNotifier<AiChatUiState> {
   @override
   Future<AiChatUiState> build() async {
     final repository = ref.read(aiChatRepositoryProvider);
-    final conversationId = await repository.ensureDefaultConversation();
+    await repository.deleteEmptyConversations();
+    final conversationId = await repository.createConversation();
 
-    final existingMessages = await repository.listMessages(conversationId);
     final chatController = ref.read(chatControllerProvider);
-
-    final uiMessages = existingMessages
-        .map(_toUiMessage)
-        .toList(growable: false);
-    if (uiMessages.isNotEmpty) {
-      await chatController.setMessages(uiMessages, animated: false);
-    }
+    await chatController.setMessages(const <chat.Message>[], animated: false);
 
     ref.onDispose(_cancelActiveStream);
 
     return AiChatUiState(conversationId: conversationId);
   }
 
-  Future<void> sendUserMessage(String text, {AiRequestContext? context}) async {
+  Future<void> sendUserMessage(
+    String text, {
+    AiRequestContext? context,
+    String? modelOverride,
+  }) async {
     final prompt = text.trim();
     if (prompt.isEmpty) {
       return;
@@ -109,6 +107,9 @@ class AiChatController extends AsyncNotifier<AiChatUiState> {
     }
 
     final settings = await ref.read(aiSettingsProvider.future);
+    final resolvedModel = modelOverride?.trim().isNotEmpty == true
+        ? modelOverride!.trim()
+        : settings.model;
     final apiKey = await ref.read(aiSettingsProvider.notifier).readApiKey();
     if (apiKey == null || apiKey.isEmpty) {
       final error = const AiErrorState(
@@ -131,6 +132,14 @@ class AiChatController extends AsyncNotifier<AiChatUiState> {
 
     final repository = ref.read(aiChatRepositoryProvider);
     final conversationId = current.conversationId;
+
+    final hasMessages = await repository.hasMessages(conversationId);
+    if (!hasMessages) {
+      await repository.updateConversationTitle(
+        conversationId,
+        _conversationTitleFromPrompt(prompt),
+      );
+    }
 
     final userMessage = AiChatMessageModel(
       id: _nextId('u'),
@@ -190,7 +199,7 @@ class AiChatController extends AsyncNotifier<AiChatUiState> {
       apiKey: apiKey,
       baseUrl: settings.baseUrl,
       request: AiCompletionRequest(
-        model: settings.model,
+        model: resolvedModel,
         stream: settings.streamingEnabled,
         messages: requestMessages,
         context: context,
@@ -224,6 +233,55 @@ class AiChatController extends AsyncNotifier<AiChatUiState> {
       return;
     }
     await sendUserMessage(failedPrompt);
+  }
+
+  Future<void> startNewConversation() async {
+    final current = state.asData?.value;
+    if (current == null) {
+      return;
+    }
+
+    await _cancelStreamForConversationSwitch();
+
+    final repository = ref.read(aiChatRepositoryProvider);
+    await _pruneIfEmpty(current.conversationId);
+    final conversationId = await repository.createConversation();
+    await _openConversation(conversationId);
+
+    ref
+        .read(statusProvider.notifier)
+        .add(StatusEntryType.success, 'Started a new conversation.');
+  }
+
+  Future<void> openConversation(String conversationId) async {
+    final current = state.asData?.value;
+    if (current == null || current.conversationId == conversationId) {
+      return;
+    }
+
+    await _cancelStreamForConversationSwitch();
+    await _pruneIfEmpty(current.conversationId);
+    await _openConversation(conversationId);
+  }
+
+  Future<void> deleteConversation(String conversationId) async {
+    final repository = ref.read(aiChatRepositoryProvider);
+    final current = state.asData?.value;
+    if (current == null) {
+      return;
+    }
+
+    await _cancelStreamForConversationSwitch();
+    await repository.deleteConversation(conversationId);
+
+    if (current.conversationId == conversationId) {
+      final nextConversationId = await repository.createConversation();
+      await _openConversation(nextConversationId);
+    }
+
+    ref
+        .read(statusProvider.notifier)
+        .add(StatusEntryType.success, 'Conversation deleted.');
   }
 
   Future<void> cancelCurrentResponse() async {
@@ -401,6 +459,60 @@ class AiChatController extends AsyncNotifier<AiChatUiState> {
     if (sub != null) {
       await sub.cancel();
     }
+  }
+
+  Future<void> _cancelStreamForConversationSwitch() async {
+    if (_activeAssistantId != null) {
+      await cancelCurrentResponse();
+      return;
+    }
+
+    await _cancelActiveStream();
+  }
+
+  Future<void> _pruneIfEmpty(String conversationId) async {
+    final repository = ref.read(aiChatRepositoryProvider);
+    final isEmpty = !await repository.hasMessages(conversationId);
+    if (isEmpty) {
+      await repository.deleteConversation(conversationId);
+    }
+  }
+
+  Future<void> _openConversation(String conversationId) async {
+    final repository = ref.read(aiChatRepositoryProvider);
+    final messages = await repository.listMessages(conversationId);
+    final uiMessages = messages.map(_toUiMessage).toList(growable: false);
+
+    await ref
+        .read(chatControllerProvider)
+        .setMessages(uiMessages, animated: false);
+
+    final current = state.asData?.value;
+    if (current == null) {
+      state = AsyncData(AiChatUiState(conversationId: conversationId));
+      return;
+    }
+
+    state = AsyncData(
+      AiChatUiState(
+        conversationId: conversationId,
+        streamingState: AiStreamingState.idle,
+        isBusy: false,
+      ),
+    );
+  }
+
+  String _conversationTitleFromPrompt(String prompt) {
+    final compact = prompt.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (compact.isEmpty) {
+      return 'New chat';
+    }
+
+    if (compact.length <= 48) {
+      return compact;
+    }
+
+    return '${compact.substring(0, 45)}...';
   }
 
   chat.Message _toUiMessage(AiChatMessageModel message) {

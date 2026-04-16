@@ -18,10 +18,55 @@ class AiChatDao extends DatabaseAccessor<AppDatabase> with _$AiChatDaoMixin {
     )..where((t) => t.id.equals(id))).getSingleOrNull();
   }
 
+  Future<void> updateConversationById(String id, AiConversationsCompanion row) {
+    return (update(aiConversations)..where((t) => t.id.equals(id))).write(row);
+  }
+
+  Future<void> deleteConversationById(String id) {
+    return (delete(aiConversations)..where((t) => t.id.equals(id))).go();
+  }
+
+  Future<List<AiConversation>> listConversations() {
+    return (select(
+      aiConversations,
+    )..orderBy([(t) => OrderingTerm.desc(t.updatedAt)])).get();
+  }
+
+  Stream<List<AiConversation>> watchConversations() {
+    return (select(
+      aiConversations,
+    )..orderBy([(t) => OrderingTerm.desc(t.updatedAt)])).watch();
+  }
+
   Future<void> touchConversation(String id, DateTime updatedAt) {
     return (update(aiConversations)..where((t) => t.id.equals(id))).write(
       AiConversationsCompanion(updatedAt: Value(updatedAt)),
     );
+  }
+
+  Future<void> deleteEmptyConversations() async {
+    final nonEmptyIds =
+        await (selectOnly(aiChatMessages)
+              ..addColumns([aiChatMessages.conversationId]))
+            .map((row) => row.read(aiChatMessages.conversationId)!)
+            .get();
+
+    if (nonEmptyIds.isEmpty) {
+      await delete(aiConversations).go();
+    } else {
+      await (delete(
+        aiConversations,
+      )..where((t) => t.id.isNotIn(nonEmptyIds))).go();
+    }
+  }
+
+  Future<int> countConversationMessages(String conversationId) {
+    final countExp = aiChatMessages.id.count();
+    final query = selectOnly(aiChatMessages)
+      ..addColumns([countExp])
+      ..where(aiChatMessages.conversationId.equals(conversationId));
+
+    return query.map((row) => row.read(countExp) ?? 0).getSingle();
   }
 
   Future<void> upsertMessage(AiChatMessagesCompanion row) {

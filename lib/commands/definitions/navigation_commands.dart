@@ -7,11 +7,11 @@ import '../app_command.dart';
 List<AppCommand> navigationCommands() => [
   AppCommand(
     id: 'openChat',
-    label: 'Open Chat',
-    description: 'Switch focus to the chat panel',
+    label: 'Open Chat History',
+    description: 'Open chat history in the context panel',
     icon: Icons.chat_bubble_outline,
     execute: (ref) async {
-      // TODO: implement chat focus / bring-to-front
+      ref.read(contextPanelProvider.notifier).show(ContextView.chatHistory);
     },
   ),
   AppCommand(

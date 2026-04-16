@@ -46,7 +46,7 @@ class Sidebar extends ConsumerWidget {
           const SizedBox(height: 8),
           _SidebarIcon(
             icon: Icons.chat_bubble_outline,
-            tooltip: 'Chat',
+            tooltip: 'Chat History',
             onTap: () => bus.run('openChat'),
           ),
           _SidebarIcon(

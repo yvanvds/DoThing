@@ -7,6 +7,8 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../../models/ai/ai_settings.dart';
 import '../../services/ai/openai_chat_service.dart';
+import '../../controllers/status_controller.dart';
+import '../../services/ai/openai_model_catalog.dart';
 
 class AiSettingsController extends AsyncNotifier<AiSettings> {
   static const _appFolderName = 'DoThing';
@@ -42,7 +44,13 @@ class AiSettingsController extends AsyncNotifier<AiSettings> {
       }
 
       final settings = AiSettings.fromJson(data);
-      return settings.copyWith(hasApiKey: hasApiKey);
+      final loaded = settings.copyWith(hasApiKey: hasApiKey);
+
+      if (loaded.hasApiKey) {
+        Future.microtask(() => _validateModelsOnStartup(loaded));
+      }
+
+      return loaded;
     } catch (_) {
       final hasApiKey = await _hasApiKey();
       return AiSettings(hasApiKey: hasApiKey);
@@ -126,6 +134,44 @@ class AiSettingsController extends AsyncNotifier<AiSettings> {
     }
   }
 
+  Future<void> _validateModelsOnStartup(AiSettings settings) async {
+    try {
+      final apiKey = await readApiKey();
+      if (apiKey == null || apiKey.isEmpty) return;
+
+      final models = await OpenAiModelCatalog().fetchModels(
+        apiKey: apiKey,
+        baseUrl: settings.baseUrl,
+      );
+      if (models.isEmpty) return;
+
+      final status = ref.read(statusProvider.notifier);
+      final selections = [
+        ('complex', settings.complexModel),
+        ('fast', settings.fastModel),
+        ('cheap', settings.cheapModel),
+      ];
+
+      for (final (label, modelId) in selections) {
+        if (!OpenAiModelCatalog.isAvailable(modelId, models)) {
+          status.add(
+            StatusEntryType.warning,
+            'AI $label model "$modelId" is no longer available. '
+            'Please review your AI model settings.',
+          );
+        } else if (OpenAiModelCatalog.isNewerFamilyAvailable(modelId, models)) {
+          status.add(
+            StatusEntryType.info,
+            'A newer version is available for your $label AI model. '
+            'Consider updating in AI settings.',
+          );
+        }
+      }
+    } catch (_) {
+      // Best-effort validation – silently ignore network / parse errors.
+    }
+  }
+
   Future<File> _getSettingsFile() async {
     final settingsDir =
         _storageDirectory ??
@@ -148,3 +194,20 @@ final aiSettingsProvider =
     AsyncNotifierProvider<AiSettingsController, AiSettings>(
       AiSettingsController.new,
     );
+
+/// Fetches, filters, and ranks the chat-capable models available on the
+/// configured OpenAI endpoint. Re-runs when the API key or base URL changes.
+final openAiAvailableModelsProvider = FutureProvider<List<OpenAiModelInfo>>((
+  ref,
+) async {
+  final settings = await ref.watch(aiSettingsProvider.future);
+  if (!settings.hasApiKey) return const [];
+
+  final apiKey = await ref.read(aiSettingsProvider.notifier).readApiKey();
+  if (apiKey == null || apiKey.isEmpty) return const [];
+
+  return OpenAiModelCatalog().fetchModels(
+    apiKey: apiKey,
+    baseUrl: settings.baseUrl,
+  );
+});

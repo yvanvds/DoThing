@@ -1,26 +1,63 @@
 import 'package:drift/drift.dart';
 
-import '../app_database.dart';
 import '../../models/ai/ai_chat_models.dart';
+import '../app_database.dart';
 
 class AiChatRepository {
   AiChatRepository(this._db);
 
   final AppDatabase _db;
 
-  static const defaultConversationId = 'default';
-
-  Future<String> ensureDefaultConversation() async {
+  Future<String> createConversation({String? title}) async {
     final now = DateTime.now();
+    final conversationId = 'conv-${now.microsecondsSinceEpoch}';
+
     await _db.aiChatDao.upsertConversation(
       AiConversationsCompanion(
-        id: const Value(defaultConversationId),
-        title: const Value('AI Chat'),
+        id: Value(conversationId),
+        title: Value(
+          (title?.trim().isNotEmpty ?? false) ? title!.trim() : 'New chat',
+        ),
         createdAt: Value(now),
         updatedAt: Value(now),
       ),
     );
-    return defaultConversationId;
+
+    return conversationId;
+  }
+
+  Future<void> deleteConversation(String conversationId) {
+    return _db.aiChatDao.deleteConversationById(conversationId);
+  }
+
+  Future<void> deleteEmptyConversations() {
+    return _db.aiChatDao.deleteEmptyConversations();
+  }
+
+  Future<void> updateConversationTitle(String conversationId, String title) {
+    return _db.aiChatDao.updateConversationById(
+      conversationId,
+      AiConversationsCompanion(
+        title: Value(title.trim().isEmpty ? 'New chat' : title.trim()),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
+  }
+
+  Future<List<AiConversationModel>> listConversations() async {
+    final rows = await _db.aiChatDao.listConversations();
+    return rows.map(_mapConversation).toList(growable: false);
+  }
+
+  Stream<List<AiConversationModel>> watchConversations() {
+    return _db.aiChatDao.watchConversations().map(
+      (rows) => rows.map(_mapConversation).toList(growable: false),
+    );
+  }
+
+  Future<bool> hasMessages(String conversationId) async {
+    final count = await _db.aiChatDao.countConversationMessages(conversationId);
+    return count > 0;
   }
 
   Future<List<AiChatMessageModel>> listMessages(String conversationId) async {
@@ -76,6 +113,15 @@ class AiChatRepository {
         providerMessageId: Value(providerMessageId),
         updatedAt: Value(DateTime.now()),
       ),
+    );
+  }
+
+  AiConversationModel _mapConversation(AiConversation row) {
+    return AiConversationModel(
+      id: row.id,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+      title: row.title,
     );
   }
 
