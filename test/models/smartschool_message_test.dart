@@ -115,4 +115,39 @@ void main() {
       expect(thread.messages.first.id, 1);
     });
   });
+
+  group('SmartschoolMessageDetail.fromJson', () {
+    test('parses visible and reply-all recipients', () {
+      final detail = SmartschoolMessageDetail.fromJson({
+        'id': 9,
+        'from': 'Teacher',
+        'subject': 'Project',
+        'body': '<p>Hi</p>',
+        'date': '2026-04-10T12:00:00Z',
+        'receivers': [
+          {'display_name': 'Alice'},
+          {'display_name': 'Bob'},
+        ],
+        'ccreceivers': [
+          {'display_name': 'Counselor'},
+        ],
+        'reply_all_to_recipients': [
+          {'display_name': 'Teacher', 'user_id': 11, 'ss_id': 22, 'user_lt': 0},
+          {'display_name': 'Alice', 'user_id': 33, 'ss_id': 44, 'user_lt': 0},
+        ],
+        'reply_all_cc_recipients': [
+          {
+            'display_name': 'Counselor',
+            'user_id': 55,
+            'ss_id': 66,
+            'user_lt': 0,
+          },
+        ],
+      });
+
+      expect(detail.receivers.map((r) => r.displayName), ['Alice', 'Bob']);
+      expect(detail.replyAllToRecipients.first.userId, 11);
+      expect(detail.replyAllCcRecipients.single.ssId, 66);
+    });
+  });
 }

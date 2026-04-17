@@ -24,70 +24,56 @@ void main() {
         final db = AppDatabase(NativeDatabase.memory());
         addTearDown(db.close);
 
-        final jan = await db.contactsDao.insertStubContact(
-          displayName: 'Jan Peeters',
-        );
-        final peter = await db.contactsDao.insertStubContact(
-          displayName: 'Peter Parker',
-        );
+        final jan = await db.contactsDao.insertContact('Jan Peeters');
+        final peter = await db.contactsDao.insertContact('Peter Parker');
 
-        await db
-            .into(db.contactIdentities)
-            .insert(
-              ContactIdentitiesCompanion.insert(
-                contactId: jan.id,
-                source: 'smartschool',
-                externalId: 'ss-jan',
-                displayNameSnapshot: const Value('Jan Peeters'),
-                lastSeenAt: DateTime.now(),
-              ),
-            );
-        await db
-            .into(db.contactIdentities)
-            .insert(
-              ContactIdentitiesCompanion.insert(
-                contactId: jan.id,
-                source: 'outlook',
-                externalId: 'JAN@SCHOOL.BE',
-                displayNameSnapshot: const Value('Jan Peeters'),
-                lastSeenAt: DateTime.now(),
-              ),
-            );
-        await db
-            .into(db.contactIdentities)
-            .insert(
-              ContactIdentitiesCompanion.insert(
-                contactId: jan.id,
-                source: 'office365',
-                externalId: 'JAN@SCHOOL.BE',
-                displayNameSnapshot: const Value('Jan Peeters'),
-                lastSeenAt: DateTime.now(),
-              ),
-            );
-        await db
-            .into(db.contactIdentities)
-            .insert(
-              ContactIdentitiesCompanion.insert(
-                contactId: jan.id,
-                source: 'gmail',
-                externalId: 'jan.private@gmail.com',
-                displayNameSnapshot: const Value('Jan Peeters'),
-                lastSeenAt: DateTime.now(),
-              ),
-            );
+        await db.into(db.contactIdentities).insert(
+          ContactIdentitiesCompanion.insert(
+            contactId: jan.id,
+            source: 'smartschool',
+            externalId: 'ss-jan',
+            displayName: const Value('Jan Peeters'),
+            lastSeenAt: DateTime.now(),
+          ),
+        );
+        await db.into(db.contactIdentities).insert(
+          ContactIdentitiesCompanion.insert(
+            contactId: jan.id,
+            source: 'outlook',
+            externalId: 'JAN@SCHOOL.BE',
+            displayName: const Value('Jan Peeters'),
+            lastSeenAt: DateTime.now(),
+          ),
+        );
+        await db.into(db.contactIdentities).insert(
+          ContactIdentitiesCompanion.insert(
+            contactId: jan.id,
+            source: 'office365',
+            externalId: 'JAN@SCHOOL.BE',
+            displayName: const Value('Jan Peeters'),
+            lastSeenAt: DateTime.now(),
+          ),
+        );
+        await db.into(db.contactIdentities).insert(
+          ContactIdentitiesCompanion.insert(
+            contactId: jan.id,
+            source: 'gmail',
+            externalId: 'jan.private@gmail.com',
+            displayName: const Value('Jan Peeters'),
+            lastSeenAt: DateTime.now(),
+          ),
+        );
 
         // Matches query through identity only; display name does not contain "jan".
-        await db
-            .into(db.contactIdentities)
-            .insert(
-              ContactIdentitiesCompanion.insert(
-                contactId: peter.id,
-                source: 'outlook',
-                externalId: 'jan.alias@work.com',
-                displayNameSnapshot: const Value('Peter Parker'),
-                lastSeenAt: DateTime.now(),
-              ),
-            );
+        await db.into(db.contactIdentities).insert(
+          ContactIdentitiesCompanion.insert(
+            contactId: peter.id,
+            source: 'outlook',
+            externalId: 'jan.alias@work.com',
+            displayName: const Value('Peter Parker'),
+            lastSeenAt: DateTime.now(),
+          ),
+        );
 
         final provider = LocalRecipientCandidateProvider(db);
         final result = await provider.search('jan');
@@ -135,45 +121,32 @@ void main() {
     );
 
     test(
-      'includes recent email addresses and ignores non-email addresses',
+      'includes recent email identities and ignores non-email external IDs',
       () async {
         final db = AppDatabase(NativeDatabase.memory());
         addTearDown(db.close);
 
-        final now = DateTime.parse('2026-04-12T12:00:00Z');
-
-        final recentMessageId = await db.messagesDao.insertMessage(
-          MessagesCompanion.insert(
-            source: 'smartschool',
-            externalId: 'recent-1',
-            mailbox: 'inbox',
-            receivedAt: now,
-          ),
+        // Recent email identity (outlook source — qualifies as email address).
+        await db.contactsDao.upsertIdentity(
+          source: 'outlook',
+          externalId: 'Recent@Example.com',
+          displayName: 'Recent Person',
         );
-
-        await db.messagesDao.replaceParticipants(recentMessageId, [
-          MessageParticipantsCompanion.insert(
-            messageId: recentMessageId,
-            role: 'to',
-            displayNameSnapshot: 'Recent Person',
-            addressSnapshot: const Value('Recent@Example.com'),
-          ),
-          MessageParticipantsCompanion.insert(
-            messageId: recentMessageId,
-            role: 'cc',
-            displayNameSnapshot: 'No Mail',
-            addressSnapshot: const Value('not-an-email'),
-          ),
-        ]);
+        // Smartschool identity with non-email external ID — should be ignored.
+        await db.contactsDao.upsertIdentity(
+          source: 'smartschool',
+          externalId: 'user:999',
+          displayName: 'Recent SS User',
+        );
 
         final provider = LocalRecipientCandidateProvider(db);
         final result = await provider.search('recent');
 
-        final recent = result.where(
+        final emailCandidates = result.where(
           (c) => c.identityKeys.contains('recent:recent@example.com'),
         );
-        expect(recent, hasLength(1));
-        final candidate = recent.single;
+        expect(emailCandidates, hasLength(1));
+        final candidate = emailCandidates.single;
         expect(candidate.relevanceScore, 30);
         expect(candidate.endpoints.single.value, 'recent@example.com');
         expect(candidate.endpoints.single.kind, RecipientEndpointKind.email);

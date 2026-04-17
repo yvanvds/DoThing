@@ -194,8 +194,18 @@ class _FakeMessagesApi implements SmartschoolMessagesApi {
   }
 
   @override
-  Future<FullMessage?> getMessage(int messageId) async {
+  Future<FullMessage?> getMessage(
+    int messageId, {
+    required BoxType boxType,
+    required bool includeAllRecipients,
+  }) async {
     return null;
+  }
+
+  @override
+  Future<(List<MessageSearchUser>, List<MessageSearchUser>)>
+  getReplyAllRecipients(int messageId, {required BoxType boxType}) async {
+    return (<MessageSearchUser>[], <MessageSearchUser>[]);
   }
 
   @override

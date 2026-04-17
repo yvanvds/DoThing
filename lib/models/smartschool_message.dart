@@ -107,6 +107,77 @@ class SmartschoolMessageHeader {
   }
 }
 
+class SmartschoolMessageRecipient {
+  const SmartschoolMessageRecipient({
+    required this.displayName,
+    this.userId,
+    this.ssId,
+    this.userLt,
+    this.picture,
+  });
+
+  final String displayName;
+  final int? userId;
+  final int? ssId;
+  final int? userLt;
+  final String? picture;
+
+  bool get hasResolvedIdentity => userId != null || ssId != null;
+
+  String get normalizedDisplayName => displayName.trim().toLowerCase();
+
+  factory SmartschoolMessageRecipient.fromJson(Map<String, dynamic> json) {
+    return SmartschoolMessageRecipient(
+      displayName: json['display_name'] as String? ?? '',
+      userId: json['user_id'] as int?,
+      ssId: json['ss_id'] as int?,
+      userLt: json['user_lt'] as int?,
+      picture: json['picture'] as String?,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'display_name': displayName,
+      'user_id': userId,
+      'ss_id': ssId,
+      'user_lt': userLt,
+      'picture': picture,
+    };
+  }
+
+  static List<SmartschoolMessageRecipient> listFromDynamic(Object? raw) {
+    if (raw == null) return const [];
+    if (raw is List) {
+      return raw
+          .map(_fromDynamic)
+          .whereType<SmartschoolMessageRecipient>()
+          .toList(growable: false);
+    }
+    final single = _fromDynamic(raw);
+    return single == null ? const [] : [single];
+  }
+
+  static SmartschoolMessageRecipient? _fromDynamic(Object? raw) {
+    if (raw == null) return null;
+    if (raw is SmartschoolMessageRecipient) return raw;
+    if (raw is String) {
+      final trimmed = raw.trim();
+      if (trimmed.isEmpty) return null;
+      return SmartschoolMessageRecipient(displayName: trimmed);
+    }
+    if (raw is Map<String, dynamic>) {
+      return SmartschoolMessageRecipient.fromJson(raw);
+    }
+    if (raw is Map) {
+      return SmartschoolMessageRecipient.fromJson(raw.cast<String, dynamic>());
+    }
+    final text = raw.toString().trim();
+    if (text.isEmpty) return null;
+    return SmartschoolMessageRecipient(displayName: text);
+  }
+}
+
 /// Full message detail (body, receivers, etc.).
 ///
 /// All fields map directly to the Python `FullMessage` attributes.
@@ -122,9 +193,11 @@ class SmartschoolMessageDetail {
     this.attachment,
     this.unread,
     this.label,
-    this.receivers,
-    this.ccReceivers,
-    this.bccReceivers,
+    this.receivers = const [],
+    this.ccReceivers = const [],
+    this.bccReceivers = const [],
+    this.replyAllToRecipients = const [],
+    this.replyAllCcRecipients = const [],
     this.senderPicture,
     this.fromTeam,
     this.totalNrOtherToReceivers,
@@ -161,13 +234,19 @@ class SmartschoolMessageDetail {
   final bool? label;
 
   /// Primary list of receivers.
-  final dynamic receivers;
+  final List<SmartschoolMessageRecipient> receivers;
 
   /// List of CC receivers (as strings).
-  final dynamic ccReceivers;
+  final List<SmartschoolMessageRecipient> ccReceivers;
 
   /// List of BCC receivers (as strings).
-  final dynamic bccReceivers;
+  final List<SmartschoolMessageRecipient> bccReceivers;
+
+  /// Resolved reply-all recipients with stable Smartschool IDs.
+  final List<SmartschoolMessageRecipient> replyAllToRecipients;
+
+  /// Resolved reply-all CC recipients with stable Smartschool IDs.
+  final List<SmartschoolMessageRecipient> replyAllCcRecipients;
 
   /// Sender's avatar image URL.
   final String? senderPicture;
@@ -208,9 +287,19 @@ class SmartschoolMessageDetail {
       attachment: json['attachment'] as int?,
       unread: json['unread'] as bool?,
       label: json['label'] as bool?,
-      receivers: json['receivers'],
-      ccReceivers: json['ccreceivers'],
-      bccReceivers: json['bccreceivers'],
+      receivers: SmartschoolMessageRecipient.listFromDynamic(json['receivers']),
+      ccReceivers: SmartschoolMessageRecipient.listFromDynamic(
+        json['ccreceivers'],
+      ),
+      bccReceivers: SmartschoolMessageRecipient.listFromDynamic(
+        json['bccreceivers'],
+      ),
+      replyAllToRecipients: SmartschoolMessageRecipient.listFromDynamic(
+        json['reply_all_to_recipients'],
+      ),
+      replyAllCcRecipients: SmartschoolMessageRecipient.listFromDynamic(
+        json['reply_all_cc_recipients'],
+      ),
       senderPicture: json['sender_picture'] as String?,
       fromTeam: json['from_team'] as int?,
       totalNrOtherToReceivers: json['total_nr_other_to_reciviers'] as int?,
@@ -221,6 +310,43 @@ class SmartschoolMessageDetail {
       hasForward: json['has_forward'] as bool?,
       sendDate: json['send_date'] as String?,
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'from': from,
+      'subject': subject,
+      'body': body,
+      'date': date,
+      'to': to,
+      'status': status,
+      'attachment': attachment,
+      'unread': unread,
+      'label': label,
+      'receivers': receivers.map((recipient) => recipient.toJson()).toList(),
+      'ccreceivers': ccReceivers
+          .map((recipient) => recipient.toJson())
+          .toList(),
+      'bccreceivers': bccReceivers
+          .map((recipient) => recipient.toJson())
+          .toList(),
+      'reply_all_to_recipients': replyAllToRecipients
+          .map((recipient) => recipient.toJson())
+          .toList(),
+      'reply_all_cc_recipients': replyAllCcRecipients
+          .map((recipient) => recipient.toJson())
+          .toList(),
+      'sender_picture': senderPicture,
+      'from_team': fromTeam,
+      'total_nr_other_to_reciviers': totalNrOtherToReceivers,
+      'total_nr_other_cc_receivers': totalNrOtherCcReceivers,
+      'total_nr_other_bcc_receivers': totalNrOtherBccReceivers,
+      'can_reply': canReply,
+      'has_reply': hasReply,
+      'has_forward': hasForward,
+      'send_date': sendDate,
+    };
   }
 }
 

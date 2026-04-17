@@ -28,7 +28,13 @@ abstract class SmartschoolMessagesApi {
     required String bodyHtml,
   });
 
-  Future<FullMessage?> getMessage(int messageId);
+  Future<FullMessage?> getMessage(
+    int messageId, {
+    required BoxType boxType,
+    required bool includeAllRecipients,
+  });
+  Future<(List<MessageSearchUser>, List<MessageSearchUser>)>
+  getReplyAllRecipients(int messageId, {required BoxType boxType});
   Future<List<dynamic>> getAttachments(int messageId);
   Future<void> markRead(int messageId);
   Future<void> markUnread(int messageId);
@@ -83,8 +89,20 @@ class _SmartschoolMessagesServiceAdapter implements SmartschoolMessagesApi {
   );
 
   @override
-  Future<FullMessage?> getMessage(int messageId) =>
-      _service.getMessage(messageId);
+  Future<FullMessage?> getMessage(
+    int messageId, {
+    required BoxType boxType,
+    required bool includeAllRecipients,
+  }) => _service.getMessage(
+    messageId,
+    boxType: boxType,
+    includeAllRecipients: includeAllRecipients,
+  );
+
+  @override
+  Future<(List<MessageSearchUser>, List<MessageSearchUser>)>
+  getReplyAllRecipients(int messageId, {required BoxType boxType}) =>
+      _service.getReplyAllRecipients(messageId, boxType: boxType);
 
   @override
   Future<List<dynamic>> getAttachments(int messageId) =>
@@ -270,11 +288,29 @@ class SmartschoolBridge {
     return threads;
   }
 
-  Future<List<SmartschoolMessageDetail>> getMessage(int messageId) async {
+  Future<List<SmartschoolMessageDetail>> getMessage(
+    int messageId, {
+    SmartschoolBoxType boxType = SmartschoolBoxType.inbox,
+  }) async {
     try {
-      final detail = await _messages.getMessage(messageId);
+      final mappedBoxType = _mapBoxType(boxType);
+      final detail = await _messages.getMessage(
+        messageId,
+        boxType: mappedBoxType,
+        includeAllRecipients: true,
+      );
       if (detail == null) return const [];
-      return [_toDetail(detail)];
+      List<MessageSearchUser> replyAllTo = const [];
+      List<MessageSearchUser> replyAllCc = const [];
+      try {
+        (replyAllTo, replyAllCc) = await _messages.getReplyAllRecipients(
+          messageId,
+          boxType: mappedBoxType,
+        );
+      } catch (_) {}
+      return [
+        _toDetail(detail, replyAllTo: replyAllTo, replyAllCc: replyAllCc),
+      ];
     } on SmartschoolParsingError catch (error) {
       // Log parsing errors for debugging
       _stderrLog.add(
@@ -522,7 +558,11 @@ class SmartschoolBridge {
     );
   }
 
-  SmartschoolMessageDetail _toDetail(FullMessage m) {
+  SmartschoolMessageDetail _toDetail(
+    FullMessage m, {
+    List<MessageSearchUser> replyAllTo = const [],
+    List<MessageSearchUser> replyAllCc = const [],
+  }) {
     return SmartschoolMessageDetail(
       id: m.id,
       from: m.sender,
@@ -534,9 +574,15 @@ class SmartschoolBridge {
       attachment: m.attachment,
       unread: m.unread,
       label: m.coloredFlag > 0,
-      receivers: m.receivers,
-      ccReceivers: m.ccReceivers,
-      bccReceivers: m.bccReceivers,
+      receivers: m.receivers.map(_toRecipient).toList(growable: false),
+      ccReceivers: m.ccReceivers.map(_toRecipient).toList(growable: false),
+      bccReceivers: m.bccReceivers.map(_toRecipient).toList(growable: false),
+      replyAllToRecipients: replyAllTo
+          .map(_toResolvedRecipient)
+          .toList(growable: false),
+      replyAllCcRecipients: replyAllCc
+          .map(_toResolvedRecipient)
+          .toList(growable: false),
       senderPicture: m.senderPicture,
       fromTeam: m.fromTeam,
       totalNrOtherToReceivers: m.totalNrOtherToReceivers,
@@ -546,6 +592,20 @@ class SmartschoolBridge {
       hasReply: m.hasReply,
       hasForward: m.hasForward,
       sendDate: m.sendDate?.toIso8601String(),
+    );
+  }
+
+  SmartschoolMessageRecipient _toRecipient(String name) {
+    return SmartschoolMessageRecipient(displayName: name.trim());
+  }
+
+  SmartschoolMessageRecipient _toResolvedRecipient(MessageSearchUser user) {
+    return SmartschoolMessageRecipient(
+      displayName: user.displayName.trim(),
+      userId: user.userId,
+      ssId: user.ssId,
+      userLt: user.userLt,
+      picture: user.picture,
     );
   }
 

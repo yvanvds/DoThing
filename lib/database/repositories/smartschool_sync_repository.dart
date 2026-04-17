@@ -1,51 +1,44 @@
-import 'dart:convert';
-
 import 'package:drift/drift.dart';
 
 import '../app_database.dart';
 
-// Re-exported for convenience
 export '../app_database.dart' show Message, MessageParticipant;
 
-// Import SmartschoolMessageHeader and SmartschoolMessageDetail from models.
-// The relative import path keeps this repository independent of the service layer.
 import '../../models/smartschool_message.dart';
 
 const _kSource = 'smartschool';
 
 /// Orchestrates persistence of Smartschool messages into the local database.
 ///
-/// This class sits between the remote bridge/DTOs and the Drift DAOs.
-/// It is responsible for:
-///  - deduplication (upsert by source + external_id)
-///  - contact/identity resolution (stub contacts when no real ID is available)
-///  - participant linking
-///  - attachment metadata upsert
-///  - FTS index maintenance
-///  - sync state bookkeeping
-///
-/// NOTE: Smartschool message headers currently carry only a display name for
-/// the sender, not a stable user ID.  Contact identities are therefore keyed
-/// by `display:<name>` until the bridge is extended to expose real user IDs.
-/// When real IDs become available, replace the `_identityKey` helper and
-/// re-run an enrichment pass.
+/// Design contract:
+///  - [syncHeaders] stores message metadata only. No participants are created.
+///    Returns the list of newly inserted headers so the caller can eagerly
+///    fetch and sync their full detail.
+///  - [syncDetail] resolves stable provider identities from the detail payload,
+///    creates participant rows, and updates the FTS index. A participant row is
+///    only written when a stable provider ID is available — never from a display
+///    name alone.
+///  - Messages with no resolved participants are invisible to contact-grouped
+///    inbox queries. This is intentional.
 class SmartschoolSyncRepository {
   SmartschoolSyncRepository(this._db);
 
   final AppDatabase _db;
 
-  // ── Public API ────────────────────────────────────────────────────────
+  // ── Public API ────────────────────────────────────────────────────────────
 
-  /// Persist a batch of inbox message headers.
+  /// Persist a batch of message headers.
   ///
-  /// Returns the number of new messages inserted (fingerprint changed or new).
-  Future<int> syncHeaders(
+  /// Returns headers that were newly inserted (not previously known).
+  /// Updated headers (fingerprint change only) are persisted but not returned —
+  /// their participants and identities are already resolved.
+  Future<List<SmartschoolMessageHeader>> syncHeaders(
     List<SmartschoolMessageHeader> headers, {
     String mailbox = 'inbox',
   }) async {
     await _db.syncStateDao.markAttempt(source: _kSource, scope: mailbox);
 
-    int newCount = 0;
+    final newHeaders = <SmartschoolMessageHeader>[];
     DateTime? latestReceivedAt;
     String? latestExternalId;
 
@@ -61,74 +54,50 @@ class SmartschoolSyncRepository {
         );
 
         if (existing != null && existing.headerFingerprint == fingerprint) {
-          // Unchanged — skip.
           continue;
         }
 
-        final companion = MessagesCompanion.insert(
-          source: _kSource,
-          externalId: externalId,
-          mailbox: mailbox,
-          subject: Value(header.subject),
-          receivedAt: receivedAt,
-          isRead: Value(!header.unread),
-          hasAttachments: Value(header.hasAttachment),
-          isDeleted: Value(header.deleted),
-          headerFingerprint: Value(fingerprint),
-          rawHeaderJson: Value(jsonEncode(_headerToMap(header))),
-          updatedAt: Value(DateTime.now()),
-        );
+        // Sender avatar URL: only use it for inbox messages because for sent
+        // messages fromImage contains the current user's avatar, not the
+        // recipient's.
+        final senderAvatarUrl =
+            mailbox != 'sent' && _isValidAvatarUrl(header.fromImage)
+            ? header.fromImage
+            : null;
 
-        final localId = await _db.transaction(() async {
-          if (existing == null) {
-            return _db.messagesDao.insertMessage(companion);
-          }
-
+        if (existing == null) {
+          await _db.messagesDao.insertMessage(
+            MessagesCompanion.insert(
+              source: _kSource,
+              externalId: externalId,
+              mailbox: mailbox,
+              subject: Value(header.subject),
+              senderAvatarUrl: Value(senderAvatarUrl),
+              receivedAt: receivedAt,
+              isRead: Value(!header.unread),
+              hasAttachments: Value(header.hasAttachment),
+              isDeleted: Value(header.deleted),
+              headerFingerprint: Value(fingerprint),
+              updatedAt: Value(DateTime.now()),
+            ),
+          );
+          newHeaders.add(header);
+        } else {
           await _db.messagesDao.updateMessageById(
             existing.id,
             MessagesCompanion(
               mailbox: Value(mailbox),
               subject: Value(header.subject),
+              senderAvatarUrl: Value(senderAvatarUrl),
               receivedAt: Value(receivedAt),
               isRead: Value(!header.unread),
               hasAttachments: Value(header.hasAttachment),
               isDeleted: Value(header.deleted),
               headerFingerprint: Value(fingerprint),
-              rawHeaderJson: Value(jsonEncode(_headerToMap(header))),
               updatedAt: Value(DateTime.now()),
             ),
           );
-          return existing.id;
-        });
-
-        // Resolve the sender as a stub contact identity.
-        // Smartschool sent headers expose recipient name in `from` but keep
-        // the current-user avatar in `fromImage`. Do not attach that image to
-        // the recipient contact identity.
-        final headerAvatar = mailbox == 'sent' ? null : header.fromImage;
-        final senderId = await _resolveSenderStub(
-          displayName: header.from,
-          avatarUrl: headerAvatar,
-        );
-
-        await _db.messagesDao.replaceParticipants(localId, [
-          MessageParticipantsCompanion.insert(
-            messageId: localId,
-            role: 'sender',
-            position: const Value(0),
-            displayNameSnapshot: header.from,
-            contactId: Value(senderId),
-          ),
-        ]);
-
-        // Rebuild FTS row for this message (no body yet at header stage).
-        await _db.searchDao.upsertFtsRow(
-          messageId: localId,
-          subject: header.subject,
-          participantNames: header.from,
-        );
-
-        newCount++;
+        }
 
         if (latestReceivedAt == null || receivedAt.isAfter(latestReceivedAt)) {
           latestReceivedAt = receivedAt;
@@ -151,13 +120,10 @@ class SmartschoolSyncRepository {
       rethrow;
     }
 
-    return newCount;
+    return newHeaders;
   }
 
-  /// Delete local headers for [mailbox] whose external ID is not among
-  /// [activeIds] (i.e. they no longer exist on Smartschool).
-  ///
-  /// Returns the number of deleted rows.
+  /// Delete local headers for [mailbox] not in [activeIds].
   Future<int> deleteStaleHeaders({
     required String mailbox,
     required Set<String> activeIds,
@@ -167,108 +133,130 @@ class SmartschoolSyncRepository {
     activeExternalIds: activeIds,
   );
 
-  /// Persist the full body detail for a message.
+  /// Resolve identities from [detail] and persist participant links.
   ///
-  /// Also resolves all participant roles (to, cc, bcc) from the detail payload
-  /// and rebuilds the FTS row.
+  /// Participant rows are only created for identities with stable provider IDs
+  /// found in [detail.replyAllToRecipients] / [detail.replyAllCcRecipients].
+  /// Recipients without a stable ID are silently skipped.
+  ///
+  /// Also updates the FTS index with the computed body text and participant
+  /// names, and refreshes [senderAvatarUrl] on the message row when the detail
+  /// provides a valid picture URL.
   Future<void> syncDetail(SmartschoolMessageDetail detail) async {
     final externalId = detail.id.toString();
-
     final existing = await _db.messagesDao.findMessage(
       source: _kSource,
       externalId: externalId,
     );
-
     if (existing == null) return;
 
-    final bodyRaw = detail.body;
-    final bodyText = _stripHtml(bodyRaw);
-
-    await _db.messagesDao.updateMessageDetail(
-      id: existing.id,
-      bodyRaw: bodyRaw,
-      bodyText: bodyText,
-      bodyFormat: 'html',
-      rawDetailJson: jsonEncode(_detailToMap(detail)),
+    // Index replyAll recipients for stable-ID lookup.
+    final resolvedToIndex = _indexResolvedRecipients(
+      detail.replyAllToRecipients,
+    );
+    final resolvedCcIndex = _indexResolvedRecipients(
+      detail.replyAllCcRecipients,
     );
 
-    // Build participant list from detail (sender + all recipient groups).
     final participants = <MessageParticipantsCompanion>[];
-    int pos = 0;
-    final senderAvatarUrl = _resolveDetailSenderAvatar(existing, detail);
+    final participantNames = <String>[];
 
-    final senderId = await _resolveSenderStub(
+    // ── Sender ──────────────────────────────────────────────────────────────
+    // Try to find the sender in replyAllToRecipients for a stable ID.
+    final senderResolved = _takeResolvedRecipient(
+      resolvedToIndex,
+      SmartschoolMessageRecipient(displayName: detail.from),
+    );
+    final senderAvatar =
+        _isValidAvatarUrl(detail.senderPicture) ? detail.senderPicture : null;
+    final senderRecipient = SmartschoolMessageRecipient(
       displayName: detail.from,
-      avatarUrl: senderAvatarUrl,
+      userId: senderResolved?.userId,
+      ssId: senderResolved?.ssId,
+      picture: senderAvatar ?? senderResolved?.picture,
     );
-
-    participants.add(
-      MessageParticipantsCompanion.insert(
-        messageId: existing.id,
-        role: 'sender',
-        position: Value(pos++),
-        displayNameSnapshot: detail.from,
-        contactId: Value(senderId),
-      ),
-    );
-
-    for (final name in _parseRecipients(detail.receivers)) {
-      final cid = await _resolveSenderStub(displayName: name);
+    final senderResult = await _resolveRecipient(senderRecipient);
+    if (senderResult != null) {
       participants.add(
         MessageParticipantsCompanion.insert(
           messageId: existing.id,
-          role: 'to',
-          position: Value(pos++),
-          displayNameSnapshot: name,
-          contactId: Value(cid),
+          contactIdentityId: senderResult.identityId,
+          role: 'sender',
         ),
       );
+      participantNames.add(senderResult.displayName);
     }
 
-    for (final name in _parseRecipients(detail.ccReceivers)) {
-      final cid = await _resolveSenderStub(displayName: name);
-      participants.add(
-        MessageParticipantsCompanion.insert(
-          messageId: existing.id,
-          role: 'cc',
-          position: Value(pos++),
-          displayNameSnapshot: name,
-          contactId: Value(cid),
-        ),
-      );
+    // ── To recipients ────────────────────────────────────────────────────────
+    for (final recipient in detail.receivers) {
+      final resolved = _takeResolvedRecipient(resolvedToIndex, recipient);
+      final result = await _resolveRecipient(recipient, resolved: resolved);
+      if (result != null) {
+        participants.add(
+          MessageParticipantsCompanion.insert(
+            messageId: existing.id,
+            contactIdentityId: result.identityId,
+            role: 'to',
+          ),
+        );
+        participantNames.add(result.displayName);
+      }
     }
 
-    for (final name in _parseRecipients(detail.bccReceivers)) {
-      final cid = await _resolveSenderStub(displayName: name);
-      participants.add(
-        MessageParticipantsCompanion.insert(
-          messageId: existing.id,
-          role: 'bcc',
-          position: Value(pos++),
-          displayNameSnapshot: name,
-          contactId: Value(cid),
-        ),
-      );
+    // ── CC recipients ────────────────────────────────────────────────────────
+    for (final recipient in detail.ccReceivers) {
+      final resolved = _takeResolvedRecipient(resolvedCcIndex, recipient);
+      final result = await _resolveRecipient(recipient, resolved: resolved);
+      if (result != null) {
+        participants.add(
+          MessageParticipantsCompanion.insert(
+            messageId: existing.id,
+            contactIdentityId: result.identityId,
+            role: 'cc',
+          ),
+        );
+        participantNames.add(result.displayName);
+      }
+    }
+
+    // ── BCC recipients ───────────────────────────────────────────────────────
+    // No replyAllBcc list is available from the API, so BCC recipients without
+    // an explicit stable ID cannot be resolved. Skipped intentionally.
+    for (final recipient in detail.bccReceivers) {
+      final result = await _resolveRecipient(recipient);
+      if (result != null) {
+        participants.add(
+          MessageParticipantsCompanion.insert(
+            messageId: existing.id,
+            contactIdentityId: result.identityId,
+            role: 'bcc',
+          ),
+        );
+        participantNames.add(result.displayName);
+      }
     }
 
     await _db.messagesDao.replaceParticipants(existing.id, participants);
 
-    // Rebuild FTS with body and all participant names.
-    final participantNames = participants
-        .map((p) => p.displayNameSnapshot.value)
-        .join(' ');
+    // Refresh sender avatar URL if detail provides a better one.
+    if (senderAvatar != null) {
+      await _db.messagesDao.updateMessageById(
+        existing.id,
+        MessagesCompanion(senderAvatarUrl: Value(senderAvatar)),
+      );
+    }
 
+    // Update FTS with ephemerally computed body text.
+    final bodyText = _stripHtml(detail.body);
     await _db.searchDao.upsertFtsRow(
       messageId: existing.id,
       subject: detail.subject,
-      bodyText: bodyText,
-      participantNames: participantNames,
+      bodyText: bodyText.isEmpty ? null : bodyText,
+      participantNames: participantNames.join(' '),
     );
   }
 
-  /// Persist attachment metadata for a message.
-  ///
-  /// Also appends attachment filenames to the FTS row.
+  /// Persist attachment metadata and refresh the FTS row.
   Future<void> syncAttachments(
     int messageExternalId,
     List<SmartschoolAttachment> attachments,
@@ -277,7 +265,6 @@ class SmartschoolSyncRepository {
       source: _kSource,
       externalId: messageExternalId.toString(),
     );
-
     if (existing == null || attachments.isEmpty) return;
 
     final rows = attachments
@@ -295,112 +282,86 @@ class SmartschoolSyncRepository {
 
     await _db.attachmentsDao.upsertAttachments(rows);
 
-    // Refresh FTS row: append attachment filenames.
-    final msg = existing;
-    final allParticipants = await _db.messagesDao.getParticipants(msg.id);
-    final participantNames = allParticipants
-        .map((p) => p.displayNameSnapshot)
-        .join(' ');
+    final participantNames = await _db.messagesDao.getParticipantDisplayNames(
+      existing.id,
+    );
     final attachmentNames = attachments.map((a) => a.name).join(' ');
 
     await _db.searchDao.upsertFtsRow(
-      messageId: msg.id,
-      subject: msg.subject,
-      bodyText: msg.bodyText,
-      participantNames: participantNames,
+      messageId: existing.id,
+      subject: existing.subject,
+      participantNames: participantNames.join(' '),
       attachmentNames: attachmentNames,
     );
   }
 
-  // ── Convenience streams (delegate to DAO) ────────────────────────────
+  // ── Convenience streams ───────────────────────────────────────────────────
 
   Stream<List<Message>> watchInbox() => _db.messagesDao.watchInbox();
 
   Stream<int> watchUnreadCount() => _db.messagesDao.watchUnreadCount();
 
-  // ── Private helpers ──────────────────────────────────────────────────
+  // ── Private helpers ───────────────────────────────────────────────────────
 
-  /// Resolve a sender display name to a local contact ID.
+  /// Resolve [recipient] to a stable identity, preferring [resolved] for IDs.
   ///
-  /// Uses a `display:<name>` stub key until the bridge exposes real user IDs.
-  Future<int?> _resolveSenderStub({
-    required String displayName,
-    String? avatarUrl,
+  /// Returns null when no stable provider ID (userId / ssId) is available.
+  Future<_ResolvedParticipant?> _resolveRecipient(
+    SmartschoolMessageRecipient recipient, {
+    SmartschoolMessageRecipient? resolved,
   }) async {
-    if (displayName.isEmpty) return null;
+    final candidate = resolved ?? recipient;
+    final extId = _stableExternalId(candidate);
+    if (extId == null) return null;
 
-    return _db.contactsDao.upsertIdentity(
+    final name = candidate.displayName.trim().isNotEmpty
+        ? candidate.displayName.trim()
+        : recipient.displayName.trim();
+    if (name.isEmpty) return null;
+
+    final identityId = await _db.contactsDao.upsertIdentity(
       source: _kSource,
-      externalId: _identityKey(displayName),
-      displayName: displayName,
-      avatarUrl: avatarUrl,
+      externalId: extId,
+      displayName: name,
+      avatarUrl:
+          _isValidAvatarUrl(candidate.picture) ? candidate.picture : null,
     );
+
+    return _ResolvedParticipant(identityId: identityId, displayName: name);
   }
 
-  /// Temporary stub key: a display-name-based identifier.
-  ///
-  /// Replace with the real Smartschool user ID once the bridge provides it.
-  String _identityKey(String displayName) =>
-      'display:${displayName.toLowerCase().trim()}';
-
-  /// Compute a simple but stable fingerprint of the mutable header fields.
-  String _headerFingerprint(SmartschoolMessageHeader h) {
-    // Include only fields that can change on subsequent polls.
-    return '${h.unread}|${h.deleted}|${h.hasAttachment}|${h.status}';
-  }
-
-  /// Parse an ISO-8601 date string, returning null on failure.
-  DateTime? _parseDate(String? raw) {
-    if (raw == null || raw.isEmpty) return null;
-    return DateTime.tryParse(raw);
-  }
-
-  /// Strip HTML tags to produce searchable plain text.
-  String _stripHtml(String html) {
-    return html
-        .replaceAll(RegExp(r'<style[^>]*>.*?</style>', dotAll: true), ' ')
-        .replaceAll(RegExp(r'<script[^>]*>.*?</script>', dotAll: true), ' ')
-        .replaceAll(RegExp(r'<[^>]+>'), ' ')
-        .replaceAll(RegExp(r'&nbsp;'), ' ')
-        .replaceAll(RegExp(r'&amp;'), '&')
-        .replaceAll(RegExp(r'&lt;'), '<')
-        .replaceAll(RegExp(r'&gt;'), '>')
-        .replaceAll(RegExp(r'&quot;'), '"')
-        .replaceAll(RegExp(r'\s{2,}'), ' ')
-        .trim();
-  }
-
-  List<String> _parseRecipients(dynamic raw) {
-    if (raw == null) return [];
-    if (raw is List) {
-      return raw
-          .map((e) => e is Map ? (e['name'] as String? ?? '') : e.toString())
-          .where((s) => s.isNotEmpty)
-          .toList();
-    }
-    if (raw is String && raw.isNotEmpty) return [raw];
-    return [];
-  }
-
-  String? _resolveDetailSenderAvatar(
-    Message existing,
-    SmartschoolMessageDetail d,
-  ) {
-    final fromHeader = _extractHeaderAvatarUrl(existing.rawHeaderJson);
-    if (_isValidAvatarUrl(fromHeader)) return fromHeader;
-    if (_isValidAvatarUrl(d.senderPicture)) return d.senderPicture;
+  String? _stableExternalId(SmartschoolMessageRecipient r) {
+    if (r.userId != null) return 'user:${r.userId}';
+    if (r.ssId != null) return 'ss:${r.ssId}';
     return null;
   }
 
-  String? _extractHeaderAvatarUrl(String? rawHeaderJson) {
-    if (rawHeaderJson == null || rawHeaderJson.trim().isEmpty) return null;
-    try {
-      final decoded = jsonDecode(rawHeaderJson);
-      if (decoded is! Map<String, dynamic>) return null;
-      return decoded['from_image'] as String?;
-    } catch (_) {
-      return null;
+  Map<String, List<SmartschoolMessageRecipient>> _indexResolvedRecipients(
+    List<SmartschoolMessageRecipient> recipients,
+  ) {
+    final index = <String, List<SmartschoolMessageRecipient>>{};
+    for (final r in recipients) {
+      final key = r.normalizedDisplayName;
+      if (key.isNotEmpty) index.putIfAbsent(key, () => []).add(r);
     }
+    return index;
+  }
+
+  SmartschoolMessageRecipient? _takeResolvedRecipient(
+    Map<String, List<SmartschoolMessageRecipient>> index,
+    SmartschoolMessageRecipient recipient,
+  ) {
+    final matches = index[recipient.normalizedDisplayName];
+    if (matches == null || matches.isEmpty) return null;
+    return matches.removeAt(0);
+  }
+
+  String _headerFingerprint(SmartschoolMessageHeader h) =>
+      '${h.unread}|${h.deleted}|${h.hasAttachment}|${h.status}';
+
+  DateTime? _parseDate(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+    return DateTime.tryParse(raw);
   }
 
   bool _isValidAvatarUrl(String? value) {
@@ -408,27 +369,27 @@ class SmartschoolSyncRepository {
     return value.startsWith('http://') || value.startsWith('https://');
   }
 
-  Map<String, dynamic> _headerToMap(SmartschoolMessageHeader h) => {
-    'id': h.id,
-    'from': h.from,
-    'from_image': h.fromImage,
-    'subject': h.subject,
-    'date': h.date,
-    'status': h.status,
-    'unread': h.unread,
-    'attachment': h.hasAttachment,
-    'deleted': h.deleted,
-    'real_box': h.realBox,
-    'send_date': h.sendDate,
-  };
+  String _stripHtml(String html) {
+    return html
+        .replaceAll(RegExp(r'<style[^>]*>.*?</style>', dotAll: true), ' ')
+        .replaceAll(RegExp(r'<script[^>]*>.*?</script>', dotAll: true), ' ')
+        .replaceAll(RegExp(r'<[^>]+>'), ' ')
+        .replaceAll('&nbsp;', ' ')
+        .replaceAll('&amp;', '&')
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&quot;', '"')
+        .replaceAll(RegExp(r'\s{2,}'), ' ')
+        .trim();
+  }
+}
 
-  Map<String, dynamic> _detailToMap(SmartschoolMessageDetail d) => {
-    'id': d.id,
-    'from': d.from,
-    'subject': d.subject,
-    'date': d.date,
-    'status': d.status,
-    'attachment': d.attachment,
-    'unread': d.unread,
-  };
+class _ResolvedParticipant {
+  const _ResolvedParticipant({
+    required this.identityId,
+    required this.displayName,
+  });
+
+  final int identityId;
+  final String displayName;
 }

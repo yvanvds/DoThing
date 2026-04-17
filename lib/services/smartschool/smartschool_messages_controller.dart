@@ -71,9 +71,10 @@ class SmartschoolMessagesController extends Notifier<void> {
   /// Fetch the full message thread for [messageId].
   Future<List<SmartschoolMessageDetail>> getMessage(
     int messageId, {
+    SmartschoolBoxType boxType = SmartschoolBoxType.inbox,
     bool reportStatus = true,
   }) async {
-    final message = await _bridge.getMessage(messageId);
+    final message = await _bridge.getMessage(messageId, boxType: boxType);
     if (reportStatus && message.isNotEmpty) {
       ref
           .read(statusProvider.notifier)

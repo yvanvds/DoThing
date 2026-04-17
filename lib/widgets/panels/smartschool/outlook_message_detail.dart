@@ -12,6 +12,8 @@ import '../../../controllers/status_controller.dart';
 import '../../../providers/database_provider.dart';
 import '../../../services/composer/composer_prefill_service.dart';
 import '../../../services/office365/office365_mail_service.dart';
+import '../../../services/office365/outlook_body_content.dart';
+import '../../../services/office365/outlook_message_body_cache_controller.dart';
 import '../../../services/smartschool/smartschool_messages_controller.dart';
 import '../composer/prefill_summary_progress_dialog.dart';
 import 'widgets/message_html_body_view.dart';
@@ -30,6 +32,13 @@ class _OutlookMessageDetailViewState
     extends ConsumerState<OutlookMessageDetailView> {
   bool _refreshing = false;
   final Set<int> _downloadingAttachmentIds = <int>{};
+  late Future<_OutlookDetailPayload?> _loadFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFuture = _load();
+  }
 
   Future<_OutlookDetailPayload?> _load() async {
     final db = ref.read(appDatabaseProvider);
@@ -48,22 +57,15 @@ class _OutlookMessageDetailViewState
     var resolvedRow = row;
     var downloadedFromServer = false;
 
-    final hasUnresolvedCid = (resolvedRow.bodyRaw ?? '').toLowerCase().contains(
-      'cid:',
-    );
-    final hasFullBody =
-        resolvedRow.detailFetchedAt != null ||
-        (resolvedRow.bodyFormat?.toLowerCase().contains('html') ?? false);
-    if (!hasFullBody || hasUnresolvedCid) {
-      try {
-        await ref
-            .read(office365MailServiceProvider)
-            .refreshMessageDetail(resolvedRow.id);
-        resolvedRow =
-            await db.messagesDao.getMessageById(resolvedRow.id) ?? resolvedRow;
-        downloadedFromServer = true;
-      } catch (_) {}
-    }
+    // Always refresh to ensure participants and attachments are up-to-date.
+    try {
+      await ref
+          .read(office365MailServiceProvider)
+          .refreshMessageDetail(resolvedRow.id);
+      resolvedRow =
+          await db.messagesDao.getMessageById(resolvedRow.id) ?? resolvedRow;
+      downloadedFromServer = true;
+    } catch (_) {}
 
     status.add(
       StatusEntryType.info,
@@ -72,7 +74,9 @@ class _OutlookMessageDetailViewState
           : 'Outlook detail loaded from local database (message ${resolvedRow.id}).',
     );
 
-    final participants = await db.messagesDao.getParticipants(resolvedRow.id);
+    final participants = await db.messagesDao.getParticipantsWithIdentity(
+      resolvedRow.id,
+    );
     final attachments = await db.attachmentsDao.getAttachmentsForMessage(
       resolvedRow.id,
     );
@@ -92,7 +96,8 @@ class _OutlookMessageDetailViewState
           .read(office365MailServiceProvider)
           .refreshMessageDetail(localMessageId);
       if (mounted) {
-        setState(() {});
+        // Re-run load so participants/attachments reflect the latest data.
+        setState(() => _loadFuture = _load());
       }
     } finally {
       if (mounted) {
@@ -291,7 +296,6 @@ class _OutlookMessageDetailViewState
       )..where((t) => t.contactId.equals(cId))).get();
     }
 
-    final bodyRaw = row.bodyRaw ?? '';
     final buf = StringBuffer()
       ..writeln('========== Outlook Message Debug ==========')
       ..writeln('--- DB Message Row ---')
@@ -306,16 +310,7 @@ class _OutlookMessageDetailViewState
           'isArchived': row.isArchived,
           'isDeleted': row.isDeleted,
           'hasAttachments': row.hasAttachments,
-          'sentAt': row.sentAt?.toIso8601String(),
           'receivedAt': row.receivedAt.toIso8601String(),
-          'detailFetchedAt': row.detailFetchedAt?.toIso8601String(),
-          'bodyFormat': row.bodyFormat,
-          'rawHeaderJson': row.rawHeaderJson,
-          'rawDetailJson': row.rawDetailJson,
-          'body_length': bodyRaw.length,
-          'body_preview': bodyRaw.length > 300
-              ? bodyRaw.substring(0, 300)
-              : bodyRaw,
         }),
       )
       ..writeln('--- Participants (${payload.participants.length}) ---');
@@ -323,14 +318,11 @@ class _OutlookMessageDetailViewState
     for (final p in payload.participants) {
       buf.writeln(
         jsonEncode({
-          'id': p.id,
-          'messageId': p.messageId,
-          'contactId': p.contactId,
-          'contactIdentityId': p.contactIdentityId,
           'role': p.role,
-          'position': p.position,
-          'displayNameSnapshot': p.displayNameSnapshot,
-          'addressSnapshot': p.addressSnapshot,
+          'contactId': p.contactId,
+          'displayName': p.displayName,
+          'externalId': p.externalId,
+          'source': p.source,
         }),
       );
     }
@@ -346,11 +338,7 @@ class _OutlookMessageDetailViewState
                 ? {
                     'id': contact.id,
                     'displayName': contact.displayName,
-                    'primaryAvatarUrl': contact.primaryAvatarUrl,
-                    'kind': contact.kind,
-                    'isStub': contact.isStub,
                     'createdAt': contact.createdAt.toIso8601String(),
-                    'updatedAt': contact.updatedAt.toIso8601String(),
                   }
                 : {'error': 'contact not found'},
           ),
@@ -364,10 +352,9 @@ class _OutlookMessageDetailViewState
               'id': identity.id,
               'source': identity.source,
               'externalId': identity.externalId,
-              'displayNameSnapshot': identity.displayNameSnapshot,
-              'avatarUrlSnapshot': identity.avatarUrlSnapshot,
+              'displayName': identity.displayName,
+              'avatarUrl': identity.avatarUrl,
               'lastSeenAt': identity.lastSeenAt.toIso8601String(),
-              'rawPayloadJson': identity.rawPayloadJson,
             }),
           );
       }
@@ -380,9 +367,10 @@ class _OutlookMessageDetailViewState
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final bodyCache = ref.watch(outlookMessageBodyCacheProvider);
 
     return FutureBuilder<_OutlookDetailPayload?>(
-      future: _load(),
+      future: _loadFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return _buildLoadingState();
@@ -397,7 +385,7 @@ class _OutlookMessageDetailViewState
           return _buildMissingState();
         }
 
-        return _buildLoadedState(context, payload, colorScheme);
+        return _buildLoadedState(context, payload, colorScheme, bodyCache);
       },
     );
   }
@@ -428,9 +416,10 @@ class _OutlookMessageDetailViewState
     BuildContext context,
     _OutlookDetailPayload payload,
     ColorScheme colorScheme,
+    Map<int, OutlookBodyContent> bodyCache,
   ) {
     final row = payload.row;
-    final body = _messageBody(row);
+    final body = _messageBody(bodyCache[row.id]);
 
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -634,26 +623,25 @@ class _OutlookMessageDetailViewState
 
   String _senderName(_OutlookDetailPayload payload) {
     return payload.participants
-        .where((participant) => participant.role == 'sender')
-        .map((participant) => participant.displayNameSnapshot)
-        .cast<String>()
-        .firstWhere(
-          (value) => value.trim().isNotEmpty,
-          orElse: () => widget.header.from,
-        );
+        .where((p) => p.role == 'sender' && p.displayName.trim().isNotEmpty)
+        .map((p) => p.displayName)
+        .firstOrNull ?? widget.header.from;
   }
 
-  _MessageBodyState _messageBody(Message row) {
-    final bodyRaw = row.bodyRaw?.trim() ?? '';
-    final bodyText = row.bodyText?.trim() ?? '';
-    final bodyFormat = (row.bodyFormat ?? '').toLowerCase();
-    final hasHtml = bodyRaw.isNotEmpty && bodyFormat.contains('html');
-    final plainBody = _resolvePlainBody(bodyText: bodyText, bodyRaw: bodyRaw);
-
+  _MessageBodyState _messageBody(OutlookBodyContent? content) {
+    if (content == null) {
+      return const _MessageBodyState(
+        bodyRaw: '',
+        plainBody: '(Body not available — click Refresh to fetch from Outlook.)',
+        hasHtml: false,
+      );
+    }
+    final bodyRaw = content.raw?.trim() ?? '';
+    final bodyFormat = (content.format ?? '').toLowerCase();
     return _MessageBodyState(
       bodyRaw: bodyRaw,
-      plainBody: plainBody,
-      hasHtml: hasHtml,
+      plainBody: bodyRaw.isEmpty ? '(No body content.)' : bodyRaw,
+      hasHtml: bodyRaw.isNotEmpty && bodyFormat.contains('html'),
     );
   }
 
@@ -720,19 +708,6 @@ class _OutlookMessageDetailViewState
     );
   }
 
-  String _resolvePlainBody({
-    required String bodyText,
-    required String bodyRaw,
-  }) {
-    if (bodyText.isNotEmpty) {
-      return bodyText;
-    }
-    if (bodyRaw.isNotEmpty) {
-      return bodyRaw;
-    }
-    return '(No body available yet. Click refresh.)';
-  }
-
   IconData? _attachmentActionIcon({
     required bool isDownloading,
     required bool isDownloaded,
@@ -784,7 +759,7 @@ class _OutlookDetailPayload {
   });
 
   final Message row;
-  final List<MessageParticipant> participants;
+  final List<ParticipantIdentity> participants;
   final List<MessageAttachment> attachments;
 }
 

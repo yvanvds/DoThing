@@ -32,39 +32,6 @@ class $ContactsTable extends Contacts with TableInfo<$ContactsTable, Contact> {
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
-  static const VerificationMeta _primaryAvatarUrlMeta = const VerificationMeta(
-    'primaryAvatarUrl',
-  );
-  @override
-  late final GeneratedColumn<String> primaryAvatarUrl = GeneratedColumn<String>(
-    'primary_avatar_url',
-    aliasedName,
-    true,
-    type: DriftSqlType.string,
-    requiredDuringInsert: false,
-  );
-  static const VerificationMeta _kindMeta = const VerificationMeta('kind');
-  @override
-  late final GeneratedColumn<String> kind = GeneratedColumn<String>(
-    'kind',
-    aliasedName,
-    true,
-    type: DriftSqlType.string,
-    requiredDuringInsert: false,
-  );
-  static const VerificationMeta _isStubMeta = const VerificationMeta('isStub');
-  @override
-  late final GeneratedColumn<bool> isStub = GeneratedColumn<bool>(
-    'is_stub',
-    aliasedName,
-    false,
-    type: DriftSqlType.bool,
-    requiredDuringInsert: false,
-    defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'CHECK ("is_stub" IN (0, 1))',
-    ),
-    defaultValue: const Constant(true),
-  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -77,28 +44,8 @@ class $ContactsTable extends Contacts with TableInfo<$ContactsTable, Contact> {
     requiredDuringInsert: false,
     defaultValue: currentDateAndTime,
   );
-  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
-    'updatedAt',
-  );
   @override
-  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
-    'updated_at',
-    aliasedName,
-    false,
-    type: DriftSqlType.dateTime,
-    requiredDuringInsert: false,
-    defaultValue: currentDateAndTime,
-  );
-  @override
-  List<GeneratedColumn> get $columns => [
-    id,
-    displayName,
-    primaryAvatarUrl,
-    kind,
-    isStub,
-    createdAt,
-    updatedAt,
-  ];
+  List<GeneratedColumn> get $columns => [id, displayName, createdAt];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -125,37 +72,10 @@ class $ContactsTable extends Contacts with TableInfo<$ContactsTable, Contact> {
     } else if (isInserting) {
       context.missing(_displayNameMeta);
     }
-    if (data.containsKey('primary_avatar_url')) {
-      context.handle(
-        _primaryAvatarUrlMeta,
-        primaryAvatarUrl.isAcceptableOrUnknown(
-          data['primary_avatar_url']!,
-          _primaryAvatarUrlMeta,
-        ),
-      );
-    }
-    if (data.containsKey('kind')) {
-      context.handle(
-        _kindMeta,
-        kind.isAcceptableOrUnknown(data['kind']!, _kindMeta),
-      );
-    }
-    if (data.containsKey('is_stub')) {
-      context.handle(
-        _isStubMeta,
-        isStub.isAcceptableOrUnknown(data['is_stub']!, _isStubMeta),
-      );
-    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
         createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
-      );
-    }
-    if (data.containsKey('updated_at')) {
-      context.handle(
-        _updatedAtMeta,
-        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
       );
     }
     return context;
@@ -175,25 +95,9 @@ class $ContactsTable extends Contacts with TableInfo<$ContactsTable, Contact> {
         DriftSqlType.string,
         data['${effectivePrefix}display_name'],
       )!,
-      primaryAvatarUrl: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}primary_avatar_url'],
-      ),
-      kind: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}kind'],
-      ),
-      isStub: attachedDatabase.typeMapping.read(
-        DriftSqlType.bool,
-        data['${effectivePrefix}is_stub'],
-      )!,
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}created_at'],
-      )!,
-      updatedAt: attachedDatabase.typeMapping.read(
-        DriftSqlType.dateTime,
-        data['${effectivePrefix}updated_at'],
       )!,
     );
   }
@@ -207,40 +111,18 @@ class $ContactsTable extends Contacts with TableInfo<$ContactsTable, Contact> {
 class Contact extends DataClass implements Insertable<Contact> {
   final int id;
   final String displayName;
-
-  /// URL to the primary avatar image, if known.
-  final String? primaryAvatarUrl;
-
-  /// Rough entity kind: 'person', 'team', 'system'.
-  final String? kind;
-
-  /// True until at least one enrichment pass has been completed.
-  final bool isStub;
   final DateTime createdAt;
-  final DateTime updatedAt;
   const Contact({
     required this.id,
     required this.displayName,
-    this.primaryAvatarUrl,
-    this.kind,
-    required this.isStub,
     required this.createdAt,
-    required this.updatedAt,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['id'] = Variable<int>(id);
     map['display_name'] = Variable<String>(displayName);
-    if (!nullToAbsent || primaryAvatarUrl != null) {
-      map['primary_avatar_url'] = Variable<String>(primaryAvatarUrl);
-    }
-    if (!nullToAbsent || kind != null) {
-      map['kind'] = Variable<String>(kind);
-    }
-    map['is_stub'] = Variable<bool>(isStub);
     map['created_at'] = Variable<DateTime>(createdAt);
-    map['updated_at'] = Variable<DateTime>(updatedAt);
     return map;
   }
 
@@ -248,13 +130,7 @@ class Contact extends DataClass implements Insertable<Contact> {
     return ContactsCompanion(
       id: Value(id),
       displayName: Value(displayName),
-      primaryAvatarUrl: primaryAvatarUrl == null && nullToAbsent
-          ? const Value.absent()
-          : Value(primaryAvatarUrl),
-      kind: kind == null && nullToAbsent ? const Value.absent() : Value(kind),
-      isStub: Value(isStub),
       createdAt: Value(createdAt),
-      updatedAt: Value(updatedAt),
     );
   }
 
@@ -266,11 +142,7 @@ class Contact extends DataClass implements Insertable<Contact> {
     return Contact(
       id: serializer.fromJson<int>(json['id']),
       displayName: serializer.fromJson<String>(json['displayName']),
-      primaryAvatarUrl: serializer.fromJson<String?>(json['primaryAvatarUrl']),
-      kind: serializer.fromJson<String?>(json['kind']),
-      isStub: serializer.fromJson<bool>(json['isStub']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
-      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
     );
   }
   @override
@@ -279,46 +151,23 @@ class Contact extends DataClass implements Insertable<Contact> {
     return <String, dynamic>{
       'id': serializer.toJson<int>(id),
       'displayName': serializer.toJson<String>(displayName),
-      'primaryAvatarUrl': serializer.toJson<String?>(primaryAvatarUrl),
-      'kind': serializer.toJson<String?>(kind),
-      'isStub': serializer.toJson<bool>(isStub),
       'createdAt': serializer.toJson<DateTime>(createdAt),
-      'updatedAt': serializer.toJson<DateTime>(updatedAt),
     };
   }
 
-  Contact copyWith({
-    int? id,
-    String? displayName,
-    Value<String?> primaryAvatarUrl = const Value.absent(),
-    Value<String?> kind = const Value.absent(),
-    bool? isStub,
-    DateTime? createdAt,
-    DateTime? updatedAt,
-  }) => Contact(
-    id: id ?? this.id,
-    displayName: displayName ?? this.displayName,
-    primaryAvatarUrl: primaryAvatarUrl.present
-        ? primaryAvatarUrl.value
-        : this.primaryAvatarUrl,
-    kind: kind.present ? kind.value : this.kind,
-    isStub: isStub ?? this.isStub,
-    createdAt: createdAt ?? this.createdAt,
-    updatedAt: updatedAt ?? this.updatedAt,
-  );
+  Contact copyWith({int? id, String? displayName, DateTime? createdAt}) =>
+      Contact(
+        id: id ?? this.id,
+        displayName: displayName ?? this.displayName,
+        createdAt: createdAt ?? this.createdAt,
+      );
   Contact copyWithCompanion(ContactsCompanion data) {
     return Contact(
       id: data.id.present ? data.id.value : this.id,
       displayName: data.displayName.present
           ? data.displayName.value
           : this.displayName,
-      primaryAvatarUrl: data.primaryAvatarUrl.present
-          ? data.primaryAvatarUrl.value
-          : this.primaryAvatarUrl,
-      kind: data.kind.present ? data.kind.value : this.kind,
-      isStub: data.isStub.present ? data.isStub.value : this.isStub,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
-      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
   }
 
@@ -327,101 +176,57 @@ class Contact extends DataClass implements Insertable<Contact> {
     return (StringBuffer('Contact(')
           ..write('id: $id, ')
           ..write('displayName: $displayName, ')
-          ..write('primaryAvatarUrl: $primaryAvatarUrl, ')
-          ..write('kind: $kind, ')
-          ..write('isStub: $isStub, ')
-          ..write('createdAt: $createdAt, ')
-          ..write('updatedAt: $updatedAt')
+          ..write('createdAt: $createdAt')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(
-    id,
-    displayName,
-    primaryAvatarUrl,
-    kind,
-    isStub,
-    createdAt,
-    updatedAt,
-  );
+  int get hashCode => Object.hash(id, displayName, createdAt);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is Contact &&
           other.id == this.id &&
           other.displayName == this.displayName &&
-          other.primaryAvatarUrl == this.primaryAvatarUrl &&
-          other.kind == this.kind &&
-          other.isStub == this.isStub &&
-          other.createdAt == this.createdAt &&
-          other.updatedAt == this.updatedAt);
+          other.createdAt == this.createdAt);
 }
 
 class ContactsCompanion extends UpdateCompanion<Contact> {
   final Value<int> id;
   final Value<String> displayName;
-  final Value<String?> primaryAvatarUrl;
-  final Value<String?> kind;
-  final Value<bool> isStub;
   final Value<DateTime> createdAt;
-  final Value<DateTime> updatedAt;
   const ContactsCompanion({
     this.id = const Value.absent(),
     this.displayName = const Value.absent(),
-    this.primaryAvatarUrl = const Value.absent(),
-    this.kind = const Value.absent(),
-    this.isStub = const Value.absent(),
     this.createdAt = const Value.absent(),
-    this.updatedAt = const Value.absent(),
   });
   ContactsCompanion.insert({
     this.id = const Value.absent(),
     required String displayName,
-    this.primaryAvatarUrl = const Value.absent(),
-    this.kind = const Value.absent(),
-    this.isStub = const Value.absent(),
     this.createdAt = const Value.absent(),
-    this.updatedAt = const Value.absent(),
   }) : displayName = Value(displayName);
   static Insertable<Contact> custom({
     Expression<int>? id,
     Expression<String>? displayName,
-    Expression<String>? primaryAvatarUrl,
-    Expression<String>? kind,
-    Expression<bool>? isStub,
     Expression<DateTime>? createdAt,
-    Expression<DateTime>? updatedAt,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (displayName != null) 'display_name': displayName,
-      if (primaryAvatarUrl != null) 'primary_avatar_url': primaryAvatarUrl,
-      if (kind != null) 'kind': kind,
-      if (isStub != null) 'is_stub': isStub,
       if (createdAt != null) 'created_at': createdAt,
-      if (updatedAt != null) 'updated_at': updatedAt,
     });
   }
 
   ContactsCompanion copyWith({
     Value<int>? id,
     Value<String>? displayName,
-    Value<String?>? primaryAvatarUrl,
-    Value<String?>? kind,
-    Value<bool>? isStub,
     Value<DateTime>? createdAt,
-    Value<DateTime>? updatedAt,
   }) {
     return ContactsCompanion(
       id: id ?? this.id,
       displayName: displayName ?? this.displayName,
-      primaryAvatarUrl: primaryAvatarUrl ?? this.primaryAvatarUrl,
-      kind: kind ?? this.kind,
-      isStub: isStub ?? this.isStub,
       createdAt: createdAt ?? this.createdAt,
-      updatedAt: updatedAt ?? this.updatedAt,
     );
   }
 
@@ -434,20 +239,8 @@ class ContactsCompanion extends UpdateCompanion<Contact> {
     if (displayName.present) {
       map['display_name'] = Variable<String>(displayName.value);
     }
-    if (primaryAvatarUrl.present) {
-      map['primary_avatar_url'] = Variable<String>(primaryAvatarUrl.value);
-    }
-    if (kind.present) {
-      map['kind'] = Variable<String>(kind.value);
-    }
-    if (isStub.present) {
-      map['is_stub'] = Variable<bool>(isStub.value);
-    }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
-    }
-    if (updatedAt.present) {
-      map['updated_at'] = Variable<DateTime>(updatedAt.value);
     }
     return map;
   }
@@ -457,11 +250,7 @@ class ContactsCompanion extends UpdateCompanion<Contact> {
     return (StringBuffer('ContactsCompanion(')
           ..write('id: $id, ')
           ..write('displayName: $displayName, ')
-          ..write('primaryAvatarUrl: $primaryAvatarUrl, ')
-          ..write('kind: $kind, ')
-          ..write('isStub: $isStub, ')
-          ..write('createdAt: $createdAt, ')
-          ..write('updatedAt: $updatedAt')
+          ..write('createdAt: $createdAt')
           ..write(')'))
         .toString();
   }
@@ -520,35 +309,23 @@ class $ContactIdentitiesTable extends ContactIdentities
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
-  static const VerificationMeta _displayNameSnapshotMeta =
-      const VerificationMeta('displayNameSnapshot');
-  @override
-  late final GeneratedColumn<String> displayNameSnapshot =
-      GeneratedColumn<String>(
-        'display_name_snapshot',
-        aliasedName,
-        true,
-        type: DriftSqlType.string,
-        requiredDuringInsert: false,
-      );
-  static const VerificationMeta _avatarUrlSnapshotMeta = const VerificationMeta(
-    'avatarUrlSnapshot',
+  static const VerificationMeta _displayNameMeta = const VerificationMeta(
+    'displayName',
   );
   @override
-  late final GeneratedColumn<String> avatarUrlSnapshot =
-      GeneratedColumn<String>(
-        'avatar_url_snapshot',
-        aliasedName,
-        true,
-        type: DriftSqlType.string,
-        requiredDuringInsert: false,
-      );
-  static const VerificationMeta _rawPayloadJsonMeta = const VerificationMeta(
-    'rawPayloadJson',
+  late final GeneratedColumn<String> displayName = GeneratedColumn<String>(
+    'display_name',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _avatarUrlMeta = const VerificationMeta(
+    'avatarUrl',
   );
   @override
-  late final GeneratedColumn<String> rawPayloadJson = GeneratedColumn<String>(
-    'raw_payload_json',
+  late final GeneratedColumn<String> avatarUrl = GeneratedColumn<String>(
+    'avatar_url',
     aliasedName,
     true,
     type: DriftSqlType.string,
@@ -564,30 +341,6 @@ class $ContactIdentitiesTable extends ContactIdentities
     false,
     type: DriftSqlType.dateTime,
     requiredDuringInsert: true,
-  );
-  static const VerificationMeta _lastEnrichedAtMeta = const VerificationMeta(
-    'lastEnrichedAt',
-  );
-  @override
-  late final GeneratedColumn<DateTime> lastEnrichedAt =
-      GeneratedColumn<DateTime>(
-        'last_enriched_at',
-        aliasedName,
-        true,
-        type: DriftSqlType.dateTime,
-        requiredDuringInsert: false,
-      );
-  static const VerificationMeta _createdAtMeta = const VerificationMeta(
-    'createdAt',
-  );
-  @override
-  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
-    'created_at',
-    aliasedName,
-    false,
-    type: DriftSqlType.dateTime,
-    requiredDuringInsert: false,
-    defaultValue: currentDateAndTime,
   );
   static const VerificationMeta _updatedAtMeta = const VerificationMeta(
     'updatedAt',
@@ -607,12 +360,9 @@ class $ContactIdentitiesTable extends ContactIdentities
     contactId,
     source,
     externalId,
-    displayNameSnapshot,
-    avatarUrlSnapshot,
-    rawPayloadJson,
+    displayName,
+    avatarUrl,
     lastSeenAt,
-    lastEnrichedAt,
-    createdAt,
     updatedAt,
   ];
   @override
@@ -654,31 +404,19 @@ class $ContactIdentitiesTable extends ContactIdentities
     } else if (isInserting) {
       context.missing(_externalIdMeta);
     }
-    if (data.containsKey('display_name_snapshot')) {
+    if (data.containsKey('display_name')) {
       context.handle(
-        _displayNameSnapshotMeta,
-        displayNameSnapshot.isAcceptableOrUnknown(
-          data['display_name_snapshot']!,
-          _displayNameSnapshotMeta,
+        _displayNameMeta,
+        displayName.isAcceptableOrUnknown(
+          data['display_name']!,
+          _displayNameMeta,
         ),
       );
     }
-    if (data.containsKey('avatar_url_snapshot')) {
+    if (data.containsKey('avatar_url')) {
       context.handle(
-        _avatarUrlSnapshotMeta,
-        avatarUrlSnapshot.isAcceptableOrUnknown(
-          data['avatar_url_snapshot']!,
-          _avatarUrlSnapshotMeta,
-        ),
-      );
-    }
-    if (data.containsKey('raw_payload_json')) {
-      context.handle(
-        _rawPayloadJsonMeta,
-        rawPayloadJson.isAcceptableOrUnknown(
-          data['raw_payload_json']!,
-          _rawPayloadJsonMeta,
-        ),
+        _avatarUrlMeta,
+        avatarUrl.isAcceptableOrUnknown(data['avatar_url']!, _avatarUrlMeta),
       );
     }
     if (data.containsKey('last_seen_at')) {
@@ -691,21 +429,6 @@ class $ContactIdentitiesTable extends ContactIdentities
       );
     } else if (isInserting) {
       context.missing(_lastSeenAtMeta);
-    }
-    if (data.containsKey('last_enriched_at')) {
-      context.handle(
-        _lastEnrichedAtMeta,
-        lastEnrichedAt.isAcceptableOrUnknown(
-          data['last_enriched_at']!,
-          _lastEnrichedAtMeta,
-        ),
-      );
-    }
-    if (data.containsKey('created_at')) {
-      context.handle(
-        _createdAtMeta,
-        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
-      );
     }
     if (data.containsKey('updated_at')) {
       context.handle(
@@ -742,29 +465,17 @@ class $ContactIdentitiesTable extends ContactIdentities
         DriftSqlType.string,
         data['${effectivePrefix}external_id'],
       )!,
-      displayNameSnapshot: attachedDatabase.typeMapping.read(
+      displayName: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
-        data['${effectivePrefix}display_name_snapshot'],
+        data['${effectivePrefix}display_name'],
       ),
-      avatarUrlSnapshot: attachedDatabase.typeMapping.read(
+      avatarUrl: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
-        data['${effectivePrefix}avatar_url_snapshot'],
-      ),
-      rawPayloadJson: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}raw_payload_json'],
+        data['${effectivePrefix}avatar_url'],
       ),
       lastSeenAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}last_seen_at'],
-      )!,
-      lastEnrichedAt: attachedDatabase.typeMapping.read(
-        DriftSqlType.dateTime,
-        data['${effectivePrefix}last_enriched_at'],
-      ),
-      createdAt: attachedDatabase.typeMapping.read(
-        DriftSqlType.dateTime,
-        data['${effectivePrefix}created_at'],
       )!,
       updatedAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
@@ -783,35 +494,27 @@ class ContactIdentity extends DataClass implements Insertable<ContactIdentity> {
   final int id;
   final int contactId;
 
-  /// Provider name, e.g. 'smartschool', 'gmail', 'outlook'.
+  /// Provider name, e.g. 'smartschool', 'outlook'.
   final String source;
 
-  /// ID of the user as supplied by the remote provider.
+  /// Stable provider-assigned ID (never a display-name derived key).
   final String externalId;
 
-  /// Display name at the time this identity was last seen.
-  final String? displayNameSnapshot;
+  /// Display name as last seen for this identity.
+  final String? displayName;
 
-  /// Avatar URL at the time this identity was last seen.
-  final String? avatarUrlSnapshot;
-
-  /// Full raw payload as JSON, for future re-processing.
-  final String? rawPayloadJson;
+  /// Avatar URL as last seen for this identity.
+  final String? avatarUrl;
   final DateTime lastSeenAt;
-  final DateTime? lastEnrichedAt;
-  final DateTime createdAt;
   final DateTime updatedAt;
   const ContactIdentity({
     required this.id,
     required this.contactId,
     required this.source,
     required this.externalId,
-    this.displayNameSnapshot,
-    this.avatarUrlSnapshot,
-    this.rawPayloadJson,
+    this.displayName,
+    this.avatarUrl,
     required this.lastSeenAt,
-    this.lastEnrichedAt,
-    required this.createdAt,
     required this.updatedAt,
   });
   @override
@@ -821,20 +524,13 @@ class ContactIdentity extends DataClass implements Insertable<ContactIdentity> {
     map['contact_id'] = Variable<int>(contactId);
     map['source'] = Variable<String>(source);
     map['external_id'] = Variable<String>(externalId);
-    if (!nullToAbsent || displayNameSnapshot != null) {
-      map['display_name_snapshot'] = Variable<String>(displayNameSnapshot);
+    if (!nullToAbsent || displayName != null) {
+      map['display_name'] = Variable<String>(displayName);
     }
-    if (!nullToAbsent || avatarUrlSnapshot != null) {
-      map['avatar_url_snapshot'] = Variable<String>(avatarUrlSnapshot);
-    }
-    if (!nullToAbsent || rawPayloadJson != null) {
-      map['raw_payload_json'] = Variable<String>(rawPayloadJson);
+    if (!nullToAbsent || avatarUrl != null) {
+      map['avatar_url'] = Variable<String>(avatarUrl);
     }
     map['last_seen_at'] = Variable<DateTime>(lastSeenAt);
-    if (!nullToAbsent || lastEnrichedAt != null) {
-      map['last_enriched_at'] = Variable<DateTime>(lastEnrichedAt);
-    }
-    map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
     return map;
   }
@@ -845,20 +541,13 @@ class ContactIdentity extends DataClass implements Insertable<ContactIdentity> {
       contactId: Value(contactId),
       source: Value(source),
       externalId: Value(externalId),
-      displayNameSnapshot: displayNameSnapshot == null && nullToAbsent
+      displayName: displayName == null && nullToAbsent
           ? const Value.absent()
-          : Value(displayNameSnapshot),
-      avatarUrlSnapshot: avatarUrlSnapshot == null && nullToAbsent
+          : Value(displayName),
+      avatarUrl: avatarUrl == null && nullToAbsent
           ? const Value.absent()
-          : Value(avatarUrlSnapshot),
-      rawPayloadJson: rawPayloadJson == null && nullToAbsent
-          ? const Value.absent()
-          : Value(rawPayloadJson),
+          : Value(avatarUrl),
       lastSeenAt: Value(lastSeenAt),
-      lastEnrichedAt: lastEnrichedAt == null && nullToAbsent
-          ? const Value.absent()
-          : Value(lastEnrichedAt),
-      createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
     );
   }
@@ -873,16 +562,9 @@ class ContactIdentity extends DataClass implements Insertable<ContactIdentity> {
       contactId: serializer.fromJson<int>(json['contactId']),
       source: serializer.fromJson<String>(json['source']),
       externalId: serializer.fromJson<String>(json['externalId']),
-      displayNameSnapshot: serializer.fromJson<String?>(
-        json['displayNameSnapshot'],
-      ),
-      avatarUrlSnapshot: serializer.fromJson<String?>(
-        json['avatarUrlSnapshot'],
-      ),
-      rawPayloadJson: serializer.fromJson<String?>(json['rawPayloadJson']),
+      displayName: serializer.fromJson<String?>(json['displayName']),
+      avatarUrl: serializer.fromJson<String?>(json['avatarUrl']),
       lastSeenAt: serializer.fromJson<DateTime>(json['lastSeenAt']),
-      lastEnrichedAt: serializer.fromJson<DateTime?>(json['lastEnrichedAt']),
-      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
     );
   }
@@ -894,12 +576,9 @@ class ContactIdentity extends DataClass implements Insertable<ContactIdentity> {
       'contactId': serializer.toJson<int>(contactId),
       'source': serializer.toJson<String>(source),
       'externalId': serializer.toJson<String>(externalId),
-      'displayNameSnapshot': serializer.toJson<String?>(displayNameSnapshot),
-      'avatarUrlSnapshot': serializer.toJson<String?>(avatarUrlSnapshot),
-      'rawPayloadJson': serializer.toJson<String?>(rawPayloadJson),
+      'displayName': serializer.toJson<String?>(displayName),
+      'avatarUrl': serializer.toJson<String?>(avatarUrl),
       'lastSeenAt': serializer.toJson<DateTime>(lastSeenAt),
-      'lastEnrichedAt': serializer.toJson<DateTime?>(lastEnrichedAt),
-      'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
     };
   }
@@ -909,32 +588,18 @@ class ContactIdentity extends DataClass implements Insertable<ContactIdentity> {
     int? contactId,
     String? source,
     String? externalId,
-    Value<String?> displayNameSnapshot = const Value.absent(),
-    Value<String?> avatarUrlSnapshot = const Value.absent(),
-    Value<String?> rawPayloadJson = const Value.absent(),
+    Value<String?> displayName = const Value.absent(),
+    Value<String?> avatarUrl = const Value.absent(),
     DateTime? lastSeenAt,
-    Value<DateTime?> lastEnrichedAt = const Value.absent(),
-    DateTime? createdAt,
     DateTime? updatedAt,
   }) => ContactIdentity(
     id: id ?? this.id,
     contactId: contactId ?? this.contactId,
     source: source ?? this.source,
     externalId: externalId ?? this.externalId,
-    displayNameSnapshot: displayNameSnapshot.present
-        ? displayNameSnapshot.value
-        : this.displayNameSnapshot,
-    avatarUrlSnapshot: avatarUrlSnapshot.present
-        ? avatarUrlSnapshot.value
-        : this.avatarUrlSnapshot,
-    rawPayloadJson: rawPayloadJson.present
-        ? rawPayloadJson.value
-        : this.rawPayloadJson,
+    displayName: displayName.present ? displayName.value : this.displayName,
+    avatarUrl: avatarUrl.present ? avatarUrl.value : this.avatarUrl,
     lastSeenAt: lastSeenAt ?? this.lastSeenAt,
-    lastEnrichedAt: lastEnrichedAt.present
-        ? lastEnrichedAt.value
-        : this.lastEnrichedAt,
-    createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
   ContactIdentity copyWithCompanion(ContactIdentitiesCompanion data) {
@@ -945,22 +610,13 @@ class ContactIdentity extends DataClass implements Insertable<ContactIdentity> {
       externalId: data.externalId.present
           ? data.externalId.value
           : this.externalId,
-      displayNameSnapshot: data.displayNameSnapshot.present
-          ? data.displayNameSnapshot.value
-          : this.displayNameSnapshot,
-      avatarUrlSnapshot: data.avatarUrlSnapshot.present
-          ? data.avatarUrlSnapshot.value
-          : this.avatarUrlSnapshot,
-      rawPayloadJson: data.rawPayloadJson.present
-          ? data.rawPayloadJson.value
-          : this.rawPayloadJson,
+      displayName: data.displayName.present
+          ? data.displayName.value
+          : this.displayName,
+      avatarUrl: data.avatarUrl.present ? data.avatarUrl.value : this.avatarUrl,
       lastSeenAt: data.lastSeenAt.present
           ? data.lastSeenAt.value
           : this.lastSeenAt,
-      lastEnrichedAt: data.lastEnrichedAt.present
-          ? data.lastEnrichedAt.value
-          : this.lastEnrichedAt,
-      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
   }
@@ -972,12 +628,9 @@ class ContactIdentity extends DataClass implements Insertable<ContactIdentity> {
           ..write('contactId: $contactId, ')
           ..write('source: $source, ')
           ..write('externalId: $externalId, ')
-          ..write('displayNameSnapshot: $displayNameSnapshot, ')
-          ..write('avatarUrlSnapshot: $avatarUrlSnapshot, ')
-          ..write('rawPayloadJson: $rawPayloadJson, ')
+          ..write('displayName: $displayName, ')
+          ..write('avatarUrl: $avatarUrl, ')
           ..write('lastSeenAt: $lastSeenAt, ')
-          ..write('lastEnrichedAt: $lastEnrichedAt, ')
-          ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
         .toString();
@@ -989,12 +642,9 @@ class ContactIdentity extends DataClass implements Insertable<ContactIdentity> {
     contactId,
     source,
     externalId,
-    displayNameSnapshot,
-    avatarUrlSnapshot,
-    rawPayloadJson,
+    displayName,
+    avatarUrl,
     lastSeenAt,
-    lastEnrichedAt,
-    createdAt,
     updatedAt,
   );
   @override
@@ -1005,12 +655,9 @@ class ContactIdentity extends DataClass implements Insertable<ContactIdentity> {
           other.contactId == this.contactId &&
           other.source == this.source &&
           other.externalId == this.externalId &&
-          other.displayNameSnapshot == this.displayNameSnapshot &&
-          other.avatarUrlSnapshot == this.avatarUrlSnapshot &&
-          other.rawPayloadJson == this.rawPayloadJson &&
+          other.displayName == this.displayName &&
+          other.avatarUrl == this.avatarUrl &&
           other.lastSeenAt == this.lastSeenAt &&
-          other.lastEnrichedAt == this.lastEnrichedAt &&
-          other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt);
 }
 
@@ -1019,24 +666,18 @@ class ContactIdentitiesCompanion extends UpdateCompanion<ContactIdentity> {
   final Value<int> contactId;
   final Value<String> source;
   final Value<String> externalId;
-  final Value<String?> displayNameSnapshot;
-  final Value<String?> avatarUrlSnapshot;
-  final Value<String?> rawPayloadJson;
+  final Value<String?> displayName;
+  final Value<String?> avatarUrl;
   final Value<DateTime> lastSeenAt;
-  final Value<DateTime?> lastEnrichedAt;
-  final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   const ContactIdentitiesCompanion({
     this.id = const Value.absent(),
     this.contactId = const Value.absent(),
     this.source = const Value.absent(),
     this.externalId = const Value.absent(),
-    this.displayNameSnapshot = const Value.absent(),
-    this.avatarUrlSnapshot = const Value.absent(),
-    this.rawPayloadJson = const Value.absent(),
+    this.displayName = const Value.absent(),
+    this.avatarUrl = const Value.absent(),
     this.lastSeenAt = const Value.absent(),
-    this.lastEnrichedAt = const Value.absent(),
-    this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
   });
   ContactIdentitiesCompanion.insert({
@@ -1044,12 +685,9 @@ class ContactIdentitiesCompanion extends UpdateCompanion<ContactIdentity> {
     required int contactId,
     required String source,
     required String externalId,
-    this.displayNameSnapshot = const Value.absent(),
-    this.avatarUrlSnapshot = const Value.absent(),
-    this.rawPayloadJson = const Value.absent(),
+    this.displayName = const Value.absent(),
+    this.avatarUrl = const Value.absent(),
     required DateTime lastSeenAt,
-    this.lastEnrichedAt = const Value.absent(),
-    this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
   }) : contactId = Value(contactId),
        source = Value(source),
@@ -1060,12 +698,9 @@ class ContactIdentitiesCompanion extends UpdateCompanion<ContactIdentity> {
     Expression<int>? contactId,
     Expression<String>? source,
     Expression<String>? externalId,
-    Expression<String>? displayNameSnapshot,
-    Expression<String>? avatarUrlSnapshot,
-    Expression<String>? rawPayloadJson,
+    Expression<String>? displayName,
+    Expression<String>? avatarUrl,
     Expression<DateTime>? lastSeenAt,
-    Expression<DateTime>? lastEnrichedAt,
-    Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
   }) {
     return RawValuesInsertable({
@@ -1073,13 +708,9 @@ class ContactIdentitiesCompanion extends UpdateCompanion<ContactIdentity> {
       if (contactId != null) 'contact_id': contactId,
       if (source != null) 'source': source,
       if (externalId != null) 'external_id': externalId,
-      if (displayNameSnapshot != null)
-        'display_name_snapshot': displayNameSnapshot,
-      if (avatarUrlSnapshot != null) 'avatar_url_snapshot': avatarUrlSnapshot,
-      if (rawPayloadJson != null) 'raw_payload_json': rawPayloadJson,
+      if (displayName != null) 'display_name': displayName,
+      if (avatarUrl != null) 'avatar_url': avatarUrl,
       if (lastSeenAt != null) 'last_seen_at': lastSeenAt,
-      if (lastEnrichedAt != null) 'last_enriched_at': lastEnrichedAt,
-      if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
     });
   }
@@ -1089,12 +720,9 @@ class ContactIdentitiesCompanion extends UpdateCompanion<ContactIdentity> {
     Value<int>? contactId,
     Value<String>? source,
     Value<String>? externalId,
-    Value<String?>? displayNameSnapshot,
-    Value<String?>? avatarUrlSnapshot,
-    Value<String?>? rawPayloadJson,
+    Value<String?>? displayName,
+    Value<String?>? avatarUrl,
     Value<DateTime>? lastSeenAt,
-    Value<DateTime?>? lastEnrichedAt,
-    Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
   }) {
     return ContactIdentitiesCompanion(
@@ -1102,12 +730,9 @@ class ContactIdentitiesCompanion extends UpdateCompanion<ContactIdentity> {
       contactId: contactId ?? this.contactId,
       source: source ?? this.source,
       externalId: externalId ?? this.externalId,
-      displayNameSnapshot: displayNameSnapshot ?? this.displayNameSnapshot,
-      avatarUrlSnapshot: avatarUrlSnapshot ?? this.avatarUrlSnapshot,
-      rawPayloadJson: rawPayloadJson ?? this.rawPayloadJson,
+      displayName: displayName ?? this.displayName,
+      avatarUrl: avatarUrl ?? this.avatarUrl,
       lastSeenAt: lastSeenAt ?? this.lastSeenAt,
-      lastEnrichedAt: lastEnrichedAt ?? this.lastEnrichedAt,
-      createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }
@@ -1127,25 +752,14 @@ class ContactIdentitiesCompanion extends UpdateCompanion<ContactIdentity> {
     if (externalId.present) {
       map['external_id'] = Variable<String>(externalId.value);
     }
-    if (displayNameSnapshot.present) {
-      map['display_name_snapshot'] = Variable<String>(
-        displayNameSnapshot.value,
-      );
+    if (displayName.present) {
+      map['display_name'] = Variable<String>(displayName.value);
     }
-    if (avatarUrlSnapshot.present) {
-      map['avatar_url_snapshot'] = Variable<String>(avatarUrlSnapshot.value);
-    }
-    if (rawPayloadJson.present) {
-      map['raw_payload_json'] = Variable<String>(rawPayloadJson.value);
+    if (avatarUrl.present) {
+      map['avatar_url'] = Variable<String>(avatarUrl.value);
     }
     if (lastSeenAt.present) {
       map['last_seen_at'] = Variable<DateTime>(lastSeenAt.value);
-    }
-    if (lastEnrichedAt.present) {
-      map['last_enriched_at'] = Variable<DateTime>(lastEnrichedAt.value);
-    }
-    if (createdAt.present) {
-      map['created_at'] = Variable<DateTime>(createdAt.value);
     }
     if (updatedAt.present) {
       map['updated_at'] = Variable<DateTime>(updatedAt.value);
@@ -1160,12 +774,9 @@ class ContactIdentitiesCompanion extends UpdateCompanion<ContactIdentity> {
           ..write('contactId: $contactId, ')
           ..write('source: $source, ')
           ..write('externalId: $externalId, ')
-          ..write('displayNameSnapshot: $displayNameSnapshot, ')
-          ..write('avatarUrlSnapshot: $avatarUrlSnapshot, ')
-          ..write('rawPayloadJson: $rawPayloadJson, ')
+          ..write('displayName: $displayName, ')
+          ..write('avatarUrl: $avatarUrl, ')
           ..write('lastSeenAt: $lastSeenAt, ')
-          ..write('lastEnrichedAt: $lastEnrichedAt, ')
-          ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
         .toString();
@@ -1233,46 +844,15 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     requiredDuringInsert: false,
     defaultValue: const Constant(''),
   );
-  static const VerificationMeta _bodyRawMeta = const VerificationMeta(
-    'bodyRaw',
+  static const VerificationMeta _senderAvatarUrlMeta = const VerificationMeta(
+    'senderAvatarUrl',
   );
   @override
-  late final GeneratedColumn<String> bodyRaw = GeneratedColumn<String>(
-    'body_raw',
+  late final GeneratedColumn<String> senderAvatarUrl = GeneratedColumn<String>(
+    'sender_avatar_url',
     aliasedName,
     true,
     type: DriftSqlType.string,
-    requiredDuringInsert: false,
-  );
-  static const VerificationMeta _bodyTextMeta = const VerificationMeta(
-    'bodyText',
-  );
-  @override
-  late final GeneratedColumn<String> bodyText = GeneratedColumn<String>(
-    'body_text',
-    aliasedName,
-    true,
-    type: DriftSqlType.string,
-    requiredDuringInsert: false,
-  );
-  static const VerificationMeta _bodyFormatMeta = const VerificationMeta(
-    'bodyFormat',
-  );
-  @override
-  late final GeneratedColumn<String> bodyFormat = GeneratedColumn<String>(
-    'body_format',
-    aliasedName,
-    true,
-    type: DriftSqlType.string,
-    requiredDuringInsert: false,
-  );
-  static const VerificationMeta _sentAtMeta = const VerificationMeta('sentAt');
-  @override
-  late final GeneratedColumn<DateTime> sentAt = GeneratedColumn<DateTime>(
-    'sent_at',
-    aliasedName,
-    true,
-    type: DriftSqlType.dateTime,
     requiredDuringInsert: false,
   );
   static const VerificationMeta _receivedAtMeta = const VerificationMeta(
@@ -1286,18 +866,6 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     type: DriftSqlType.dateTime,
     requiredDuringInsert: true,
   );
-  static const VerificationMeta _remoteUpdatedAtMeta = const VerificationMeta(
-    'remoteUpdatedAt',
-  );
-  @override
-  late final GeneratedColumn<DateTime> remoteUpdatedAt =
-      GeneratedColumn<DateTime>(
-        'remote_updated_at',
-        aliasedName,
-        true,
-        type: DriftSqlType.dateTime,
-        requiredDuringInsert: false,
-      );
   static const VerificationMeta _isReadMeta = const VerificationMeta('isRead');
   @override
   late final GeneratedColumn<bool> isRead = GeneratedColumn<bool>(
@@ -1356,18 +924,6 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     ),
     defaultValue: const Constant(false),
   );
-  static const VerificationMeta _detailFetchedAtMeta = const VerificationMeta(
-    'detailFetchedAt',
-  );
-  @override
-  late final GeneratedColumn<DateTime> detailFetchedAt =
-      GeneratedColumn<DateTime>(
-        'detail_fetched_at',
-        aliasedName,
-        true,
-        type: DriftSqlType.dateTime,
-        requiredDuringInsert: false,
-      );
   static const VerificationMeta _headerFingerprintMeta = const VerificationMeta(
     'headerFingerprint',
   );
@@ -1380,28 +936,6 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
         type: DriftSqlType.string,
         requiredDuringInsert: false,
       );
-  static const VerificationMeta _rawHeaderJsonMeta = const VerificationMeta(
-    'rawHeaderJson',
-  );
-  @override
-  late final GeneratedColumn<String> rawHeaderJson = GeneratedColumn<String>(
-    'raw_header_json',
-    aliasedName,
-    true,
-    type: DriftSqlType.string,
-    requiredDuringInsert: false,
-  );
-  static const VerificationMeta _rawDetailJsonMeta = const VerificationMeta(
-    'rawDetailJson',
-  );
-  @override
-  late final GeneratedColumn<String> rawDetailJson = GeneratedColumn<String>(
-    'raw_detail_json',
-    aliasedName,
-    true,
-    type: DriftSqlType.string,
-    requiredDuringInsert: false,
-  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -1433,20 +967,13 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     externalId,
     mailbox,
     subject,
-    bodyRaw,
-    bodyText,
-    bodyFormat,
-    sentAt,
+    senderAvatarUrl,
     receivedAt,
-    remoteUpdatedAt,
     isRead,
     isArchived,
     isDeleted,
     hasAttachments,
-    detailFetchedAt,
     headerFingerprint,
-    rawHeaderJson,
-    rawDetailJson,
     createdAt,
     updatedAt,
   ];
@@ -1495,28 +1022,13 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
         subject.isAcceptableOrUnknown(data['subject']!, _subjectMeta),
       );
     }
-    if (data.containsKey('body_raw')) {
+    if (data.containsKey('sender_avatar_url')) {
       context.handle(
-        _bodyRawMeta,
-        bodyRaw.isAcceptableOrUnknown(data['body_raw']!, _bodyRawMeta),
-      );
-    }
-    if (data.containsKey('body_text')) {
-      context.handle(
-        _bodyTextMeta,
-        bodyText.isAcceptableOrUnknown(data['body_text']!, _bodyTextMeta),
-      );
-    }
-    if (data.containsKey('body_format')) {
-      context.handle(
-        _bodyFormatMeta,
-        bodyFormat.isAcceptableOrUnknown(data['body_format']!, _bodyFormatMeta),
-      );
-    }
-    if (data.containsKey('sent_at')) {
-      context.handle(
-        _sentAtMeta,
-        sentAt.isAcceptableOrUnknown(data['sent_at']!, _sentAtMeta),
+        _senderAvatarUrlMeta,
+        senderAvatarUrl.isAcceptableOrUnknown(
+          data['sender_avatar_url']!,
+          _senderAvatarUrlMeta,
+        ),
       );
     }
     if (data.containsKey('received_at')) {
@@ -1526,15 +1038,6 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
       );
     } else if (isInserting) {
       context.missing(_receivedAtMeta);
-    }
-    if (data.containsKey('remote_updated_at')) {
-      context.handle(
-        _remoteUpdatedAtMeta,
-        remoteUpdatedAt.isAcceptableOrUnknown(
-          data['remote_updated_at']!,
-          _remoteUpdatedAtMeta,
-        ),
-      );
     }
     if (data.containsKey('is_read')) {
       context.handle(
@@ -1563,39 +1066,12 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
         ),
       );
     }
-    if (data.containsKey('detail_fetched_at')) {
-      context.handle(
-        _detailFetchedAtMeta,
-        detailFetchedAt.isAcceptableOrUnknown(
-          data['detail_fetched_at']!,
-          _detailFetchedAtMeta,
-        ),
-      );
-    }
     if (data.containsKey('header_fingerprint')) {
       context.handle(
         _headerFingerprintMeta,
         headerFingerprint.isAcceptableOrUnknown(
           data['header_fingerprint']!,
           _headerFingerprintMeta,
-        ),
-      );
-    }
-    if (data.containsKey('raw_header_json')) {
-      context.handle(
-        _rawHeaderJsonMeta,
-        rawHeaderJson.isAcceptableOrUnknown(
-          data['raw_header_json']!,
-          _rawHeaderJsonMeta,
-        ),
-      );
-    }
-    if (data.containsKey('raw_detail_json')) {
-      context.handle(
-        _rawDetailJsonMeta,
-        rawDetailJson.isAcceptableOrUnknown(
-          data['raw_detail_json']!,
-          _rawDetailJsonMeta,
         ),
       );
     }
@@ -1644,30 +1120,14 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
         DriftSqlType.string,
         data['${effectivePrefix}subject'],
       )!,
-      bodyRaw: attachedDatabase.typeMapping.read(
+      senderAvatarUrl: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
-        data['${effectivePrefix}body_raw'],
-      ),
-      bodyText: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}body_text'],
-      ),
-      bodyFormat: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}body_format'],
-      ),
-      sentAt: attachedDatabase.typeMapping.read(
-        DriftSqlType.dateTime,
-        data['${effectivePrefix}sent_at'],
+        data['${effectivePrefix}sender_avatar_url'],
       ),
       receivedAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}received_at'],
       )!,
-      remoteUpdatedAt: attachedDatabase.typeMapping.read(
-        DriftSqlType.dateTime,
-        data['${effectivePrefix}remote_updated_at'],
-      ),
       isRead: attachedDatabase.typeMapping.read(
         DriftSqlType.bool,
         data['${effectivePrefix}is_read'],
@@ -1684,21 +1144,9 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
         DriftSqlType.bool,
         data['${effectivePrefix}has_attachments'],
       )!,
-      detailFetchedAt: attachedDatabase.typeMapping.read(
-        DriftSqlType.dateTime,
-        data['${effectivePrefix}detail_fetched_at'],
-      ),
       headerFingerprint: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}header_fingerprint'],
-      ),
-      rawHeaderJson: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}raw_header_json'],
-      ),
-      rawDetailJson: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}raw_detail_json'],
       ),
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
@@ -1720,7 +1168,7 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
 class Message extends DataClass implements Insertable<Message> {
   final int id;
 
-  /// Provider name, always 'smartschool' for now.
+  /// Provider name, e.g. 'smartschool'.
   final String source;
 
   /// ID of the message as assigned by the remote provider.
@@ -1730,39 +1178,18 @@ class Message extends DataClass implements Insertable<Message> {
   final String mailbox;
   final String subject;
 
-  /// Original body as received (typically HTML).
-  final String? bodyRaw;
+  /// Sender's avatar URL captured at header-sync time.
+  final String? senderAvatarUrl;
 
-  /// Normalized plain-text body for FTS and AI processing.
-  final String? bodyText;
-
-  /// Format of [bodyRaw], e.g. 'html' or 'plain'.
-  final String? bodyFormat;
-
-  /// When the message was sent (may differ from server receive time).
-  final DateTime? sentAt;
-
-  /// When we first received / stored this message.
+  /// When the message was received / first stored.
   final DateTime receivedAt;
-
-  /// Timestamp from the remote provider, used for update detection.
-  final DateTime? remoteUpdatedAt;
   final bool isRead;
   final bool isArchived;
   final bool isDeleted;
   final bool hasAttachments;
 
-  /// When the full body detail was last fetched and stored.
-  final DateTime? detailFetchedAt;
-
-  /// Hash of header fields used to detect remote updates without deep comparison.
+  /// Hash of mutable header fields used to detect remote updates.
   final String? headerFingerprint;
-
-  /// Raw header JSON snapshot for debugging / re-processing.
-  final String? rawHeaderJson;
-
-  /// Raw detail JSON snapshot for debugging / re-processing.
-  final String? rawDetailJson;
   final DateTime createdAt;
   final DateTime updatedAt;
   const Message({
@@ -1771,20 +1198,13 @@ class Message extends DataClass implements Insertable<Message> {
     required this.externalId,
     required this.mailbox,
     required this.subject,
-    this.bodyRaw,
-    this.bodyText,
-    this.bodyFormat,
-    this.sentAt,
+    this.senderAvatarUrl,
     required this.receivedAt,
-    this.remoteUpdatedAt,
     required this.isRead,
     required this.isArchived,
     required this.isDeleted,
     required this.hasAttachments,
-    this.detailFetchedAt,
     this.headerFingerprint,
-    this.rawHeaderJson,
-    this.rawDetailJson,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -1796,37 +1216,16 @@ class Message extends DataClass implements Insertable<Message> {
     map['external_id'] = Variable<String>(externalId);
     map['mailbox'] = Variable<String>(mailbox);
     map['subject'] = Variable<String>(subject);
-    if (!nullToAbsent || bodyRaw != null) {
-      map['body_raw'] = Variable<String>(bodyRaw);
-    }
-    if (!nullToAbsent || bodyText != null) {
-      map['body_text'] = Variable<String>(bodyText);
-    }
-    if (!nullToAbsent || bodyFormat != null) {
-      map['body_format'] = Variable<String>(bodyFormat);
-    }
-    if (!nullToAbsent || sentAt != null) {
-      map['sent_at'] = Variable<DateTime>(sentAt);
+    if (!nullToAbsent || senderAvatarUrl != null) {
+      map['sender_avatar_url'] = Variable<String>(senderAvatarUrl);
     }
     map['received_at'] = Variable<DateTime>(receivedAt);
-    if (!nullToAbsent || remoteUpdatedAt != null) {
-      map['remote_updated_at'] = Variable<DateTime>(remoteUpdatedAt);
-    }
     map['is_read'] = Variable<bool>(isRead);
     map['is_archived'] = Variable<bool>(isArchived);
     map['is_deleted'] = Variable<bool>(isDeleted);
     map['has_attachments'] = Variable<bool>(hasAttachments);
-    if (!nullToAbsent || detailFetchedAt != null) {
-      map['detail_fetched_at'] = Variable<DateTime>(detailFetchedAt);
-    }
     if (!nullToAbsent || headerFingerprint != null) {
       map['header_fingerprint'] = Variable<String>(headerFingerprint);
-    }
-    if (!nullToAbsent || rawHeaderJson != null) {
-      map['raw_header_json'] = Variable<String>(rawHeaderJson);
-    }
-    if (!nullToAbsent || rawDetailJson != null) {
-      map['raw_detail_json'] = Variable<String>(rawDetailJson);
     }
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
@@ -1840,38 +1239,17 @@ class Message extends DataClass implements Insertable<Message> {
       externalId: Value(externalId),
       mailbox: Value(mailbox),
       subject: Value(subject),
-      bodyRaw: bodyRaw == null && nullToAbsent
+      senderAvatarUrl: senderAvatarUrl == null && nullToAbsent
           ? const Value.absent()
-          : Value(bodyRaw),
-      bodyText: bodyText == null && nullToAbsent
-          ? const Value.absent()
-          : Value(bodyText),
-      bodyFormat: bodyFormat == null && nullToAbsent
-          ? const Value.absent()
-          : Value(bodyFormat),
-      sentAt: sentAt == null && nullToAbsent
-          ? const Value.absent()
-          : Value(sentAt),
+          : Value(senderAvatarUrl),
       receivedAt: Value(receivedAt),
-      remoteUpdatedAt: remoteUpdatedAt == null && nullToAbsent
-          ? const Value.absent()
-          : Value(remoteUpdatedAt),
       isRead: Value(isRead),
       isArchived: Value(isArchived),
       isDeleted: Value(isDeleted),
       hasAttachments: Value(hasAttachments),
-      detailFetchedAt: detailFetchedAt == null && nullToAbsent
-          ? const Value.absent()
-          : Value(detailFetchedAt),
       headerFingerprint: headerFingerprint == null && nullToAbsent
           ? const Value.absent()
           : Value(headerFingerprint),
-      rawHeaderJson: rawHeaderJson == null && nullToAbsent
-          ? const Value.absent()
-          : Value(rawHeaderJson),
-      rawDetailJson: rawDetailJson == null && nullToAbsent
-          ? const Value.absent()
-          : Value(rawDetailJson),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
     );
@@ -1888,22 +1266,15 @@ class Message extends DataClass implements Insertable<Message> {
       externalId: serializer.fromJson<String>(json['externalId']),
       mailbox: serializer.fromJson<String>(json['mailbox']),
       subject: serializer.fromJson<String>(json['subject']),
-      bodyRaw: serializer.fromJson<String?>(json['bodyRaw']),
-      bodyText: serializer.fromJson<String?>(json['bodyText']),
-      bodyFormat: serializer.fromJson<String?>(json['bodyFormat']),
-      sentAt: serializer.fromJson<DateTime?>(json['sentAt']),
+      senderAvatarUrl: serializer.fromJson<String?>(json['senderAvatarUrl']),
       receivedAt: serializer.fromJson<DateTime>(json['receivedAt']),
-      remoteUpdatedAt: serializer.fromJson<DateTime?>(json['remoteUpdatedAt']),
       isRead: serializer.fromJson<bool>(json['isRead']),
       isArchived: serializer.fromJson<bool>(json['isArchived']),
       isDeleted: serializer.fromJson<bool>(json['isDeleted']),
       hasAttachments: serializer.fromJson<bool>(json['hasAttachments']),
-      detailFetchedAt: serializer.fromJson<DateTime?>(json['detailFetchedAt']),
       headerFingerprint: serializer.fromJson<String?>(
         json['headerFingerprint'],
       ),
-      rawHeaderJson: serializer.fromJson<String?>(json['rawHeaderJson']),
-      rawDetailJson: serializer.fromJson<String?>(json['rawDetailJson']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
     );
@@ -1917,20 +1288,13 @@ class Message extends DataClass implements Insertable<Message> {
       'externalId': serializer.toJson<String>(externalId),
       'mailbox': serializer.toJson<String>(mailbox),
       'subject': serializer.toJson<String>(subject),
-      'bodyRaw': serializer.toJson<String?>(bodyRaw),
-      'bodyText': serializer.toJson<String?>(bodyText),
-      'bodyFormat': serializer.toJson<String?>(bodyFormat),
-      'sentAt': serializer.toJson<DateTime?>(sentAt),
+      'senderAvatarUrl': serializer.toJson<String?>(senderAvatarUrl),
       'receivedAt': serializer.toJson<DateTime>(receivedAt),
-      'remoteUpdatedAt': serializer.toJson<DateTime?>(remoteUpdatedAt),
       'isRead': serializer.toJson<bool>(isRead),
       'isArchived': serializer.toJson<bool>(isArchived),
       'isDeleted': serializer.toJson<bool>(isDeleted),
       'hasAttachments': serializer.toJson<bool>(hasAttachments),
-      'detailFetchedAt': serializer.toJson<DateTime?>(detailFetchedAt),
       'headerFingerprint': serializer.toJson<String?>(headerFingerprint),
-      'rawHeaderJson': serializer.toJson<String?>(rawHeaderJson),
-      'rawDetailJson': serializer.toJson<String?>(rawDetailJson),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
     };
@@ -1942,20 +1306,13 @@ class Message extends DataClass implements Insertable<Message> {
     String? externalId,
     String? mailbox,
     String? subject,
-    Value<String?> bodyRaw = const Value.absent(),
-    Value<String?> bodyText = const Value.absent(),
-    Value<String?> bodyFormat = const Value.absent(),
-    Value<DateTime?> sentAt = const Value.absent(),
+    Value<String?> senderAvatarUrl = const Value.absent(),
     DateTime? receivedAt,
-    Value<DateTime?> remoteUpdatedAt = const Value.absent(),
     bool? isRead,
     bool? isArchived,
     bool? isDeleted,
     bool? hasAttachments,
-    Value<DateTime?> detailFetchedAt = const Value.absent(),
     Value<String?> headerFingerprint = const Value.absent(),
-    Value<String?> rawHeaderJson = const Value.absent(),
-    Value<String?> rawDetailJson = const Value.absent(),
     DateTime? createdAt,
     DateTime? updatedAt,
   }) => Message(
@@ -1964,30 +1321,17 @@ class Message extends DataClass implements Insertable<Message> {
     externalId: externalId ?? this.externalId,
     mailbox: mailbox ?? this.mailbox,
     subject: subject ?? this.subject,
-    bodyRaw: bodyRaw.present ? bodyRaw.value : this.bodyRaw,
-    bodyText: bodyText.present ? bodyText.value : this.bodyText,
-    bodyFormat: bodyFormat.present ? bodyFormat.value : this.bodyFormat,
-    sentAt: sentAt.present ? sentAt.value : this.sentAt,
+    senderAvatarUrl: senderAvatarUrl.present
+        ? senderAvatarUrl.value
+        : this.senderAvatarUrl,
     receivedAt: receivedAt ?? this.receivedAt,
-    remoteUpdatedAt: remoteUpdatedAt.present
-        ? remoteUpdatedAt.value
-        : this.remoteUpdatedAt,
     isRead: isRead ?? this.isRead,
     isArchived: isArchived ?? this.isArchived,
     isDeleted: isDeleted ?? this.isDeleted,
     hasAttachments: hasAttachments ?? this.hasAttachments,
-    detailFetchedAt: detailFetchedAt.present
-        ? detailFetchedAt.value
-        : this.detailFetchedAt,
     headerFingerprint: headerFingerprint.present
         ? headerFingerprint.value
         : this.headerFingerprint,
-    rawHeaderJson: rawHeaderJson.present
-        ? rawHeaderJson.value
-        : this.rawHeaderJson,
-    rawDetailJson: rawDetailJson.present
-        ? rawDetailJson.value
-        : this.rawDetailJson,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
@@ -2000,18 +1344,12 @@ class Message extends DataClass implements Insertable<Message> {
           : this.externalId,
       mailbox: data.mailbox.present ? data.mailbox.value : this.mailbox,
       subject: data.subject.present ? data.subject.value : this.subject,
-      bodyRaw: data.bodyRaw.present ? data.bodyRaw.value : this.bodyRaw,
-      bodyText: data.bodyText.present ? data.bodyText.value : this.bodyText,
-      bodyFormat: data.bodyFormat.present
-          ? data.bodyFormat.value
-          : this.bodyFormat,
-      sentAt: data.sentAt.present ? data.sentAt.value : this.sentAt,
+      senderAvatarUrl: data.senderAvatarUrl.present
+          ? data.senderAvatarUrl.value
+          : this.senderAvatarUrl,
       receivedAt: data.receivedAt.present
           ? data.receivedAt.value
           : this.receivedAt,
-      remoteUpdatedAt: data.remoteUpdatedAt.present
-          ? data.remoteUpdatedAt.value
-          : this.remoteUpdatedAt,
       isRead: data.isRead.present ? data.isRead.value : this.isRead,
       isArchived: data.isArchived.present
           ? data.isArchived.value
@@ -2020,18 +1358,9 @@ class Message extends DataClass implements Insertable<Message> {
       hasAttachments: data.hasAttachments.present
           ? data.hasAttachments.value
           : this.hasAttachments,
-      detailFetchedAt: data.detailFetchedAt.present
-          ? data.detailFetchedAt.value
-          : this.detailFetchedAt,
       headerFingerprint: data.headerFingerprint.present
           ? data.headerFingerprint.value
           : this.headerFingerprint,
-      rawHeaderJson: data.rawHeaderJson.present
-          ? data.rawHeaderJson.value
-          : this.rawHeaderJson,
-      rawDetailJson: data.rawDetailJson.present
-          ? data.rawDetailJson.value
-          : this.rawDetailJson,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
@@ -2045,20 +1374,13 @@ class Message extends DataClass implements Insertable<Message> {
           ..write('externalId: $externalId, ')
           ..write('mailbox: $mailbox, ')
           ..write('subject: $subject, ')
-          ..write('bodyRaw: $bodyRaw, ')
-          ..write('bodyText: $bodyText, ')
-          ..write('bodyFormat: $bodyFormat, ')
-          ..write('sentAt: $sentAt, ')
+          ..write('senderAvatarUrl: $senderAvatarUrl, ')
           ..write('receivedAt: $receivedAt, ')
-          ..write('remoteUpdatedAt: $remoteUpdatedAt, ')
           ..write('isRead: $isRead, ')
           ..write('isArchived: $isArchived, ')
           ..write('isDeleted: $isDeleted, ')
           ..write('hasAttachments: $hasAttachments, ')
-          ..write('detailFetchedAt: $detailFetchedAt, ')
           ..write('headerFingerprint: $headerFingerprint, ')
-          ..write('rawHeaderJson: $rawHeaderJson, ')
-          ..write('rawDetailJson: $rawDetailJson, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
@@ -2066,29 +1388,22 @@ class Message extends DataClass implements Insertable<Message> {
   }
 
   @override
-  int get hashCode => Object.hashAll([
+  int get hashCode => Object.hash(
     id,
     source,
     externalId,
     mailbox,
     subject,
-    bodyRaw,
-    bodyText,
-    bodyFormat,
-    sentAt,
+    senderAvatarUrl,
     receivedAt,
-    remoteUpdatedAt,
     isRead,
     isArchived,
     isDeleted,
     hasAttachments,
-    detailFetchedAt,
     headerFingerprint,
-    rawHeaderJson,
-    rawDetailJson,
     createdAt,
     updatedAt,
-  ]);
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -2098,20 +1413,13 @@ class Message extends DataClass implements Insertable<Message> {
           other.externalId == this.externalId &&
           other.mailbox == this.mailbox &&
           other.subject == this.subject &&
-          other.bodyRaw == this.bodyRaw &&
-          other.bodyText == this.bodyText &&
-          other.bodyFormat == this.bodyFormat &&
-          other.sentAt == this.sentAt &&
+          other.senderAvatarUrl == this.senderAvatarUrl &&
           other.receivedAt == this.receivedAt &&
-          other.remoteUpdatedAt == this.remoteUpdatedAt &&
           other.isRead == this.isRead &&
           other.isArchived == this.isArchived &&
           other.isDeleted == this.isDeleted &&
           other.hasAttachments == this.hasAttachments &&
-          other.detailFetchedAt == this.detailFetchedAt &&
           other.headerFingerprint == this.headerFingerprint &&
-          other.rawHeaderJson == this.rawHeaderJson &&
-          other.rawDetailJson == this.rawDetailJson &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt);
 }
@@ -2122,20 +1430,13 @@ class MessagesCompanion extends UpdateCompanion<Message> {
   final Value<String> externalId;
   final Value<String> mailbox;
   final Value<String> subject;
-  final Value<String?> bodyRaw;
-  final Value<String?> bodyText;
-  final Value<String?> bodyFormat;
-  final Value<DateTime?> sentAt;
+  final Value<String?> senderAvatarUrl;
   final Value<DateTime> receivedAt;
-  final Value<DateTime?> remoteUpdatedAt;
   final Value<bool> isRead;
   final Value<bool> isArchived;
   final Value<bool> isDeleted;
   final Value<bool> hasAttachments;
-  final Value<DateTime?> detailFetchedAt;
   final Value<String?> headerFingerprint;
-  final Value<String?> rawHeaderJson;
-  final Value<String?> rawDetailJson;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   const MessagesCompanion({
@@ -2144,20 +1445,13 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     this.externalId = const Value.absent(),
     this.mailbox = const Value.absent(),
     this.subject = const Value.absent(),
-    this.bodyRaw = const Value.absent(),
-    this.bodyText = const Value.absent(),
-    this.bodyFormat = const Value.absent(),
-    this.sentAt = const Value.absent(),
+    this.senderAvatarUrl = const Value.absent(),
     this.receivedAt = const Value.absent(),
-    this.remoteUpdatedAt = const Value.absent(),
     this.isRead = const Value.absent(),
     this.isArchived = const Value.absent(),
     this.isDeleted = const Value.absent(),
     this.hasAttachments = const Value.absent(),
-    this.detailFetchedAt = const Value.absent(),
     this.headerFingerprint = const Value.absent(),
-    this.rawHeaderJson = const Value.absent(),
-    this.rawDetailJson = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
   });
@@ -2167,20 +1461,13 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     required String externalId,
     required String mailbox,
     this.subject = const Value.absent(),
-    this.bodyRaw = const Value.absent(),
-    this.bodyText = const Value.absent(),
-    this.bodyFormat = const Value.absent(),
-    this.sentAt = const Value.absent(),
+    this.senderAvatarUrl = const Value.absent(),
     required DateTime receivedAt,
-    this.remoteUpdatedAt = const Value.absent(),
     this.isRead = const Value.absent(),
     this.isArchived = const Value.absent(),
     this.isDeleted = const Value.absent(),
     this.hasAttachments = const Value.absent(),
-    this.detailFetchedAt = const Value.absent(),
     this.headerFingerprint = const Value.absent(),
-    this.rawHeaderJson = const Value.absent(),
-    this.rawDetailJson = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
   }) : source = Value(source),
@@ -2193,20 +1480,13 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     Expression<String>? externalId,
     Expression<String>? mailbox,
     Expression<String>? subject,
-    Expression<String>? bodyRaw,
-    Expression<String>? bodyText,
-    Expression<String>? bodyFormat,
-    Expression<DateTime>? sentAt,
+    Expression<String>? senderAvatarUrl,
     Expression<DateTime>? receivedAt,
-    Expression<DateTime>? remoteUpdatedAt,
     Expression<bool>? isRead,
     Expression<bool>? isArchived,
     Expression<bool>? isDeleted,
     Expression<bool>? hasAttachments,
-    Expression<DateTime>? detailFetchedAt,
     Expression<String>? headerFingerprint,
-    Expression<String>? rawHeaderJson,
-    Expression<String>? rawDetailJson,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
   }) {
@@ -2216,20 +1496,13 @@ class MessagesCompanion extends UpdateCompanion<Message> {
       if (externalId != null) 'external_id': externalId,
       if (mailbox != null) 'mailbox': mailbox,
       if (subject != null) 'subject': subject,
-      if (bodyRaw != null) 'body_raw': bodyRaw,
-      if (bodyText != null) 'body_text': bodyText,
-      if (bodyFormat != null) 'body_format': bodyFormat,
-      if (sentAt != null) 'sent_at': sentAt,
+      if (senderAvatarUrl != null) 'sender_avatar_url': senderAvatarUrl,
       if (receivedAt != null) 'received_at': receivedAt,
-      if (remoteUpdatedAt != null) 'remote_updated_at': remoteUpdatedAt,
       if (isRead != null) 'is_read': isRead,
       if (isArchived != null) 'is_archived': isArchived,
       if (isDeleted != null) 'is_deleted': isDeleted,
       if (hasAttachments != null) 'has_attachments': hasAttachments,
-      if (detailFetchedAt != null) 'detail_fetched_at': detailFetchedAt,
       if (headerFingerprint != null) 'header_fingerprint': headerFingerprint,
-      if (rawHeaderJson != null) 'raw_header_json': rawHeaderJson,
-      if (rawDetailJson != null) 'raw_detail_json': rawDetailJson,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
     });
@@ -2241,20 +1514,13 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     Value<String>? externalId,
     Value<String>? mailbox,
     Value<String>? subject,
-    Value<String?>? bodyRaw,
-    Value<String?>? bodyText,
-    Value<String?>? bodyFormat,
-    Value<DateTime?>? sentAt,
+    Value<String?>? senderAvatarUrl,
     Value<DateTime>? receivedAt,
-    Value<DateTime?>? remoteUpdatedAt,
     Value<bool>? isRead,
     Value<bool>? isArchived,
     Value<bool>? isDeleted,
     Value<bool>? hasAttachments,
-    Value<DateTime?>? detailFetchedAt,
     Value<String?>? headerFingerprint,
-    Value<String?>? rawHeaderJson,
-    Value<String?>? rawDetailJson,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
   }) {
@@ -2264,20 +1530,13 @@ class MessagesCompanion extends UpdateCompanion<Message> {
       externalId: externalId ?? this.externalId,
       mailbox: mailbox ?? this.mailbox,
       subject: subject ?? this.subject,
-      bodyRaw: bodyRaw ?? this.bodyRaw,
-      bodyText: bodyText ?? this.bodyText,
-      bodyFormat: bodyFormat ?? this.bodyFormat,
-      sentAt: sentAt ?? this.sentAt,
+      senderAvatarUrl: senderAvatarUrl ?? this.senderAvatarUrl,
       receivedAt: receivedAt ?? this.receivedAt,
-      remoteUpdatedAt: remoteUpdatedAt ?? this.remoteUpdatedAt,
       isRead: isRead ?? this.isRead,
       isArchived: isArchived ?? this.isArchived,
       isDeleted: isDeleted ?? this.isDeleted,
       hasAttachments: hasAttachments ?? this.hasAttachments,
-      detailFetchedAt: detailFetchedAt ?? this.detailFetchedAt,
       headerFingerprint: headerFingerprint ?? this.headerFingerprint,
-      rawHeaderJson: rawHeaderJson ?? this.rawHeaderJson,
-      rawDetailJson: rawDetailJson ?? this.rawDetailJson,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -2301,23 +1560,11 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     if (subject.present) {
       map['subject'] = Variable<String>(subject.value);
     }
-    if (bodyRaw.present) {
-      map['body_raw'] = Variable<String>(bodyRaw.value);
-    }
-    if (bodyText.present) {
-      map['body_text'] = Variable<String>(bodyText.value);
-    }
-    if (bodyFormat.present) {
-      map['body_format'] = Variable<String>(bodyFormat.value);
-    }
-    if (sentAt.present) {
-      map['sent_at'] = Variable<DateTime>(sentAt.value);
+    if (senderAvatarUrl.present) {
+      map['sender_avatar_url'] = Variable<String>(senderAvatarUrl.value);
     }
     if (receivedAt.present) {
       map['received_at'] = Variable<DateTime>(receivedAt.value);
-    }
-    if (remoteUpdatedAt.present) {
-      map['remote_updated_at'] = Variable<DateTime>(remoteUpdatedAt.value);
     }
     if (isRead.present) {
       map['is_read'] = Variable<bool>(isRead.value);
@@ -2331,17 +1578,8 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     if (hasAttachments.present) {
       map['has_attachments'] = Variable<bool>(hasAttachments.value);
     }
-    if (detailFetchedAt.present) {
-      map['detail_fetched_at'] = Variable<DateTime>(detailFetchedAt.value);
-    }
     if (headerFingerprint.present) {
       map['header_fingerprint'] = Variable<String>(headerFingerprint.value);
-    }
-    if (rawHeaderJson.present) {
-      map['raw_header_json'] = Variable<String>(rawHeaderJson.value);
-    }
-    if (rawDetailJson.present) {
-      map['raw_detail_json'] = Variable<String>(rawDetailJson.value);
     }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
@@ -2360,20 +1598,13 @@ class MessagesCompanion extends UpdateCompanion<Message> {
           ..write('externalId: $externalId, ')
           ..write('mailbox: $mailbox, ')
           ..write('subject: $subject, ')
-          ..write('bodyRaw: $bodyRaw, ')
-          ..write('bodyText: $bodyText, ')
-          ..write('bodyFormat: $bodyFormat, ')
-          ..write('sentAt: $sentAt, ')
+          ..write('senderAvatarUrl: $senderAvatarUrl, ')
           ..write('receivedAt: $receivedAt, ')
-          ..write('remoteUpdatedAt: $remoteUpdatedAt, ')
           ..write('isRead: $isRead, ')
           ..write('isArchived: $isArchived, ')
           ..write('isDeleted: $isDeleted, ')
           ..write('hasAttachments: $hasAttachments, ')
-          ..write('detailFetchedAt: $detailFetchedAt, ')
           ..write('headerFingerprint: $headerFingerprint, ')
-          ..write('rawHeaderJson: $rawHeaderJson, ')
-          ..write('rawDetailJson: $rawDetailJson, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
@@ -2414,20 +1645,6 @@ class $MessageParticipantsTable extends MessageParticipants
       'REFERENCES messages (id) ON DELETE CASCADE',
     ),
   );
-  static const VerificationMeta _contactIdMeta = const VerificationMeta(
-    'contactId',
-  );
-  @override
-  late final GeneratedColumn<int> contactId = GeneratedColumn<int>(
-    'contact_id',
-    aliasedName,
-    true,
-    type: DriftSqlType.int,
-    requiredDuringInsert: false,
-    defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'REFERENCES contacts (id) ON DELETE SET NULL',
-    ),
-  );
   static const VerificationMeta _contactIdentityIdMeta = const VerificationMeta(
     'contactIdentityId',
   );
@@ -2435,11 +1652,11 @@ class $MessageParticipantsTable extends MessageParticipants
   late final GeneratedColumn<int> contactIdentityId = GeneratedColumn<int>(
     'contact_identity_id',
     aliasedName,
-    true,
+    false,
     type: DriftSqlType.int,
-    requiredDuringInsert: false,
+    requiredDuringInsert: true,
     defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'REFERENCES contact_identities (id) ON DELETE SET NULL',
+      'REFERENCES contact_identities (id) ON DELETE CASCADE',
     ),
   );
   static const VerificationMeta _roleMeta = const VerificationMeta('role');
@@ -2451,63 +1668,12 @@ class $MessageParticipantsTable extends MessageParticipants
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
-  static const VerificationMeta _positionMeta = const VerificationMeta(
-    'position',
-  );
-  @override
-  late final GeneratedColumn<int> position = GeneratedColumn<int>(
-    'position',
-    aliasedName,
-    false,
-    type: DriftSqlType.int,
-    requiredDuringInsert: false,
-    defaultValue: const Constant(0),
-  );
-  static const VerificationMeta _displayNameSnapshotMeta =
-      const VerificationMeta('displayNameSnapshot');
-  @override
-  late final GeneratedColumn<String> displayNameSnapshot =
-      GeneratedColumn<String>(
-        'display_name_snapshot',
-        aliasedName,
-        false,
-        type: DriftSqlType.string,
-        requiredDuringInsert: true,
-      );
-  static const VerificationMeta _addressSnapshotMeta = const VerificationMeta(
-    'addressSnapshot',
-  );
-  @override
-  late final GeneratedColumn<String> addressSnapshot = GeneratedColumn<String>(
-    'address_snapshot',
-    aliasedName,
-    true,
-    type: DriftSqlType.string,
-    requiredDuringInsert: false,
-  );
-  static const VerificationMeta _createdAtMeta = const VerificationMeta(
-    'createdAt',
-  );
-  @override
-  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
-    'created_at',
-    aliasedName,
-    false,
-    type: DriftSqlType.dateTime,
-    requiredDuringInsert: false,
-    defaultValue: currentDateAndTime,
-  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
     messageId,
-    contactId,
     contactIdentityId,
     role,
-    position,
-    displayNameSnapshot,
-    addressSnapshot,
-    createdAt,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -2532,12 +1698,6 @@ class $MessageParticipantsTable extends MessageParticipants
     } else if (isInserting) {
       context.missing(_messageIdMeta);
     }
-    if (data.containsKey('contact_id')) {
-      context.handle(
-        _contactIdMeta,
-        contactId.isAcceptableOrUnknown(data['contact_id']!, _contactIdMeta),
-      );
-    }
     if (data.containsKey('contact_identity_id')) {
       context.handle(
         _contactIdentityIdMeta,
@@ -2546,6 +1706,8 @@ class $MessageParticipantsTable extends MessageParticipants
           _contactIdentityIdMeta,
         ),
       );
+    } else if (isInserting) {
+      context.missing(_contactIdentityIdMeta);
     }
     if (data.containsKey('role')) {
       context.handle(
@@ -2554,38 +1716,6 @@ class $MessageParticipantsTable extends MessageParticipants
       );
     } else if (isInserting) {
       context.missing(_roleMeta);
-    }
-    if (data.containsKey('position')) {
-      context.handle(
-        _positionMeta,
-        position.isAcceptableOrUnknown(data['position']!, _positionMeta),
-      );
-    }
-    if (data.containsKey('display_name_snapshot')) {
-      context.handle(
-        _displayNameSnapshotMeta,
-        displayNameSnapshot.isAcceptableOrUnknown(
-          data['display_name_snapshot']!,
-          _displayNameSnapshotMeta,
-        ),
-      );
-    } else if (isInserting) {
-      context.missing(_displayNameSnapshotMeta);
-    }
-    if (data.containsKey('address_snapshot')) {
-      context.handle(
-        _addressSnapshotMeta,
-        addressSnapshot.isAcceptableOrUnknown(
-          data['address_snapshot']!,
-          _addressSnapshotMeta,
-        ),
-      );
-    }
-    if (data.containsKey('created_at')) {
-      context.handle(
-        _createdAtMeta,
-        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
-      );
     }
     return context;
   }
@@ -2604,33 +1734,13 @@ class $MessageParticipantsTable extends MessageParticipants
         DriftSqlType.int,
         data['${effectivePrefix}message_id'],
       )!,
-      contactId: attachedDatabase.typeMapping.read(
-        DriftSqlType.int,
-        data['${effectivePrefix}contact_id'],
-      ),
       contactIdentityId: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}contact_identity_id'],
-      ),
+      )!,
       role: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}role'],
-      )!,
-      position: attachedDatabase.typeMapping.read(
-        DriftSqlType.int,
-        data['${effectivePrefix}position'],
-      )!,
-      displayNameSnapshot: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}display_name_snapshot'],
-      )!,
-      addressSnapshot: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}address_snapshot'],
-      ),
-      createdAt: attachedDatabase.typeMapping.read(
-        DriftSqlType.dateTime,
-        data['${effectivePrefix}created_at'],
       )!,
     );
   }
@@ -2646,53 +1756,24 @@ class MessageParticipant extends DataClass
   final int id;
   final int messageId;
 
-  /// May be null for stub/unresolved participants.
-  final int? contactId;
-
-  /// The specific identity this participant was resolved from.
-  final int? contactIdentityId;
+  /// The resolved identity for this participant. Never null.
+  final int contactIdentityId;
 
   /// Role in this message: 'sender', 'to', 'cc', 'bcc'.
   final String role;
-
-  /// Position within the role group (0-based).
-  final int position;
-
-  /// Display name as it appeared when the message was ingested.
-  final String displayNameSnapshot;
-
-  /// Email address or other identifier snapshot.
-  final String? addressSnapshot;
-  final DateTime createdAt;
   const MessageParticipant({
     required this.id,
     required this.messageId,
-    this.contactId,
-    this.contactIdentityId,
+    required this.contactIdentityId,
     required this.role,
-    required this.position,
-    required this.displayNameSnapshot,
-    this.addressSnapshot,
-    required this.createdAt,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['id'] = Variable<int>(id);
     map['message_id'] = Variable<int>(messageId);
-    if (!nullToAbsent || contactId != null) {
-      map['contact_id'] = Variable<int>(contactId);
-    }
-    if (!nullToAbsent || contactIdentityId != null) {
-      map['contact_identity_id'] = Variable<int>(contactIdentityId);
-    }
+    map['contact_identity_id'] = Variable<int>(contactIdentityId);
     map['role'] = Variable<String>(role);
-    map['position'] = Variable<int>(position);
-    map['display_name_snapshot'] = Variable<String>(displayNameSnapshot);
-    if (!nullToAbsent || addressSnapshot != null) {
-      map['address_snapshot'] = Variable<String>(addressSnapshot);
-    }
-    map['created_at'] = Variable<DateTime>(createdAt);
     return map;
   }
 
@@ -2700,19 +1781,8 @@ class MessageParticipant extends DataClass
     return MessageParticipantsCompanion(
       id: Value(id),
       messageId: Value(messageId),
-      contactId: contactId == null && nullToAbsent
-          ? const Value.absent()
-          : Value(contactId),
-      contactIdentityId: contactIdentityId == null && nullToAbsent
-          ? const Value.absent()
-          : Value(contactIdentityId),
+      contactIdentityId: Value(contactIdentityId),
       role: Value(role),
-      position: Value(position),
-      displayNameSnapshot: Value(displayNameSnapshot),
-      addressSnapshot: addressSnapshot == null && nullToAbsent
-          ? const Value.absent()
-          : Value(addressSnapshot),
-      createdAt: Value(createdAt),
     );
   }
 
@@ -2724,15 +1794,8 @@ class MessageParticipant extends DataClass
     return MessageParticipant(
       id: serializer.fromJson<int>(json['id']),
       messageId: serializer.fromJson<int>(json['messageId']),
-      contactId: serializer.fromJson<int?>(json['contactId']),
-      contactIdentityId: serializer.fromJson<int?>(json['contactIdentityId']),
+      contactIdentityId: serializer.fromJson<int>(json['contactIdentityId']),
       role: serializer.fromJson<String>(json['role']),
-      position: serializer.fromJson<int>(json['position']),
-      displayNameSnapshot: serializer.fromJson<String>(
-        json['displayNameSnapshot'],
-      ),
-      addressSnapshot: serializer.fromJson<String?>(json['addressSnapshot']),
-      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
     );
   }
   @override
@@ -2741,58 +1804,30 @@ class MessageParticipant extends DataClass
     return <String, dynamic>{
       'id': serializer.toJson<int>(id),
       'messageId': serializer.toJson<int>(messageId),
-      'contactId': serializer.toJson<int?>(contactId),
-      'contactIdentityId': serializer.toJson<int?>(contactIdentityId),
+      'contactIdentityId': serializer.toJson<int>(contactIdentityId),
       'role': serializer.toJson<String>(role),
-      'position': serializer.toJson<int>(position),
-      'displayNameSnapshot': serializer.toJson<String>(displayNameSnapshot),
-      'addressSnapshot': serializer.toJson<String?>(addressSnapshot),
-      'createdAt': serializer.toJson<DateTime>(createdAt),
     };
   }
 
   MessageParticipant copyWith({
     int? id,
     int? messageId,
-    Value<int?> contactId = const Value.absent(),
-    Value<int?> contactIdentityId = const Value.absent(),
+    int? contactIdentityId,
     String? role,
-    int? position,
-    String? displayNameSnapshot,
-    Value<String?> addressSnapshot = const Value.absent(),
-    DateTime? createdAt,
   }) => MessageParticipant(
     id: id ?? this.id,
     messageId: messageId ?? this.messageId,
-    contactId: contactId.present ? contactId.value : this.contactId,
-    contactIdentityId: contactIdentityId.present
-        ? contactIdentityId.value
-        : this.contactIdentityId,
+    contactIdentityId: contactIdentityId ?? this.contactIdentityId,
     role: role ?? this.role,
-    position: position ?? this.position,
-    displayNameSnapshot: displayNameSnapshot ?? this.displayNameSnapshot,
-    addressSnapshot: addressSnapshot.present
-        ? addressSnapshot.value
-        : this.addressSnapshot,
-    createdAt: createdAt ?? this.createdAt,
   );
   MessageParticipant copyWithCompanion(MessageParticipantsCompanion data) {
     return MessageParticipant(
       id: data.id.present ? data.id.value : this.id,
       messageId: data.messageId.present ? data.messageId.value : this.messageId,
-      contactId: data.contactId.present ? data.contactId.value : this.contactId,
       contactIdentityId: data.contactIdentityId.present
           ? data.contactIdentityId.value
           : this.contactIdentityId,
       role: data.role.present ? data.role.value : this.role,
-      position: data.position.present ? data.position.value : this.position,
-      displayNameSnapshot: data.displayNameSnapshot.present
-          ? data.displayNameSnapshot.value
-          : this.displayNameSnapshot,
-      addressSnapshot: data.addressSnapshot.present
-          ? data.addressSnapshot.value
-          : this.addressSnapshot,
-      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
     );
   }
 
@@ -2801,124 +1836,68 @@ class MessageParticipant extends DataClass
     return (StringBuffer('MessageParticipant(')
           ..write('id: $id, ')
           ..write('messageId: $messageId, ')
-          ..write('contactId: $contactId, ')
           ..write('contactIdentityId: $contactIdentityId, ')
-          ..write('role: $role, ')
-          ..write('position: $position, ')
-          ..write('displayNameSnapshot: $displayNameSnapshot, ')
-          ..write('addressSnapshot: $addressSnapshot, ')
-          ..write('createdAt: $createdAt')
+          ..write('role: $role')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(
-    id,
-    messageId,
-    contactId,
-    contactIdentityId,
-    role,
-    position,
-    displayNameSnapshot,
-    addressSnapshot,
-    createdAt,
-  );
+  int get hashCode => Object.hash(id, messageId, contactIdentityId, role);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is MessageParticipant &&
           other.id == this.id &&
           other.messageId == this.messageId &&
-          other.contactId == this.contactId &&
           other.contactIdentityId == this.contactIdentityId &&
-          other.role == this.role &&
-          other.position == this.position &&
-          other.displayNameSnapshot == this.displayNameSnapshot &&
-          other.addressSnapshot == this.addressSnapshot &&
-          other.createdAt == this.createdAt);
+          other.role == this.role);
 }
 
 class MessageParticipantsCompanion extends UpdateCompanion<MessageParticipant> {
   final Value<int> id;
   final Value<int> messageId;
-  final Value<int?> contactId;
-  final Value<int?> contactIdentityId;
+  final Value<int> contactIdentityId;
   final Value<String> role;
-  final Value<int> position;
-  final Value<String> displayNameSnapshot;
-  final Value<String?> addressSnapshot;
-  final Value<DateTime> createdAt;
   const MessageParticipantsCompanion({
     this.id = const Value.absent(),
     this.messageId = const Value.absent(),
-    this.contactId = const Value.absent(),
     this.contactIdentityId = const Value.absent(),
     this.role = const Value.absent(),
-    this.position = const Value.absent(),
-    this.displayNameSnapshot = const Value.absent(),
-    this.addressSnapshot = const Value.absent(),
-    this.createdAt = const Value.absent(),
   });
   MessageParticipantsCompanion.insert({
     this.id = const Value.absent(),
     required int messageId,
-    this.contactId = const Value.absent(),
-    this.contactIdentityId = const Value.absent(),
+    required int contactIdentityId,
     required String role,
-    this.position = const Value.absent(),
-    required String displayNameSnapshot,
-    this.addressSnapshot = const Value.absent(),
-    this.createdAt = const Value.absent(),
   }) : messageId = Value(messageId),
-       role = Value(role),
-       displayNameSnapshot = Value(displayNameSnapshot);
+       contactIdentityId = Value(contactIdentityId),
+       role = Value(role);
   static Insertable<MessageParticipant> custom({
     Expression<int>? id,
     Expression<int>? messageId,
-    Expression<int>? contactId,
     Expression<int>? contactIdentityId,
     Expression<String>? role,
-    Expression<int>? position,
-    Expression<String>? displayNameSnapshot,
-    Expression<String>? addressSnapshot,
-    Expression<DateTime>? createdAt,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (messageId != null) 'message_id': messageId,
-      if (contactId != null) 'contact_id': contactId,
       if (contactIdentityId != null) 'contact_identity_id': contactIdentityId,
       if (role != null) 'role': role,
-      if (position != null) 'position': position,
-      if (displayNameSnapshot != null)
-        'display_name_snapshot': displayNameSnapshot,
-      if (addressSnapshot != null) 'address_snapshot': addressSnapshot,
-      if (createdAt != null) 'created_at': createdAt,
     });
   }
 
   MessageParticipantsCompanion copyWith({
     Value<int>? id,
     Value<int>? messageId,
-    Value<int?>? contactId,
-    Value<int?>? contactIdentityId,
+    Value<int>? contactIdentityId,
     Value<String>? role,
-    Value<int>? position,
-    Value<String>? displayNameSnapshot,
-    Value<String?>? addressSnapshot,
-    Value<DateTime>? createdAt,
   }) {
     return MessageParticipantsCompanion(
       id: id ?? this.id,
       messageId: messageId ?? this.messageId,
-      contactId: contactId ?? this.contactId,
       contactIdentityId: contactIdentityId ?? this.contactIdentityId,
       role: role ?? this.role,
-      position: position ?? this.position,
-      displayNameSnapshot: displayNameSnapshot ?? this.displayNameSnapshot,
-      addressSnapshot: addressSnapshot ?? this.addressSnapshot,
-      createdAt: createdAt ?? this.createdAt,
     );
   }
 
@@ -2931,28 +1910,11 @@ class MessageParticipantsCompanion extends UpdateCompanion<MessageParticipant> {
     if (messageId.present) {
       map['message_id'] = Variable<int>(messageId.value);
     }
-    if (contactId.present) {
-      map['contact_id'] = Variable<int>(contactId.value);
-    }
     if (contactIdentityId.present) {
       map['contact_identity_id'] = Variable<int>(contactIdentityId.value);
     }
     if (role.present) {
       map['role'] = Variable<String>(role.value);
-    }
-    if (position.present) {
-      map['position'] = Variable<int>(position.value);
-    }
-    if (displayNameSnapshot.present) {
-      map['display_name_snapshot'] = Variable<String>(
-        displayNameSnapshot.value,
-      );
-    }
-    if (addressSnapshot.present) {
-      map['address_snapshot'] = Variable<String>(addressSnapshot.value);
-    }
-    if (createdAt.present) {
-      map['created_at'] = Variable<DateTime>(createdAt.value);
     }
     return map;
   }
@@ -2962,13 +1924,8 @@ class MessageParticipantsCompanion extends UpdateCompanion<MessageParticipant> {
     return (StringBuffer('MessageParticipantsCompanion(')
           ..write('id: $id, ')
           ..write('messageId: $messageId, ')
-          ..write('contactId: $contactId, ')
           ..write('contactIdentityId: $contactIdentityId, ')
-          ..write('role: $role, ')
-          ..write('position: $position, ')
-          ..write('displayNameSnapshot: $displayNameSnapshot, ')
-          ..write('addressSnapshot: $addressSnapshot, ')
-          ..write('createdAt: $createdAt')
+          ..write('role: $role')
           ..write(')'))
         .toString();
   }
@@ -6301,17 +5258,10 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     ),
     WritePropagation(
       on: TableUpdateQuery.onTableName(
-        'contacts',
-        limitUpdateKind: UpdateKind.delete,
-      ),
-      result: [TableUpdate('message_participants', kind: UpdateKind.update)],
-    ),
-    WritePropagation(
-      on: TableUpdateQuery.onTableName(
         'contact_identities',
         limitUpdateKind: UpdateKind.delete,
       ),
-      result: [TableUpdate('message_participants', kind: UpdateKind.update)],
+      result: [TableUpdate('message_participants', kind: UpdateKind.delete)],
     ),
     WritePropagation(
       on: TableUpdateQuery.onTableName(
@@ -6334,21 +5284,13 @@ typedef $$ContactsTableCreateCompanionBuilder =
     ContactsCompanion Function({
       Value<int> id,
       required String displayName,
-      Value<String?> primaryAvatarUrl,
-      Value<String?> kind,
-      Value<bool> isStub,
       Value<DateTime> createdAt,
-      Value<DateTime> updatedAt,
     });
 typedef $$ContactsTableUpdateCompanionBuilder =
     ContactsCompanion Function({
       Value<int> id,
       Value<String> displayName,
-      Value<String?> primaryAvatarUrl,
-      Value<String?> kind,
-      Value<bool> isStub,
       Value<DateTime> createdAt,
-      Value<DateTime> updatedAt,
     });
 
 final class $$ContactsTableReferences
@@ -6378,33 +5320,6 @@ final class $$ContactsTableReferences
       manager.$state.copyWith(prefetchedData: cache),
     );
   }
-
-  static MultiTypedResultKey<
-    $MessageParticipantsTable,
-    List<MessageParticipant>
-  >
-  _messageParticipantsRefsTable(_$AppDatabase db) =>
-      MultiTypedResultKey.fromTable(
-        db.messageParticipants,
-        aliasName: $_aliasNameGenerator(
-          db.contacts.id,
-          db.messageParticipants.contactId,
-        ),
-      );
-
-  $$MessageParticipantsTableProcessedTableManager get messageParticipantsRefs {
-    final manager = $$MessageParticipantsTableTableManager(
-      $_db,
-      $_db.messageParticipants,
-    ).filter((f) => f.contactId.id.sqlEquals($_itemColumn<int>('id')!));
-
-    final cache = $_typedResult.readTableOrNull(
-      _messageParticipantsRefsTable($_db),
-    );
-    return ProcessedTableManager(
-      manager.$state.copyWith(prefetchedData: cache),
-    );
-  }
 }
 
 class $$ContactsTableFilterComposer
@@ -6426,28 +5341,8 @@ class $$ContactsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnFilters<String> get primaryAvatarUrl => $composableBuilder(
-    column: $table.primaryAvatarUrl,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get kind => $composableBuilder(
-    column: $table.kind,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<bool> get isStub => $composableBuilder(
-    column: $table.isStub,
-    builder: (column) => ColumnFilters(column),
-  );
-
   ColumnFilters<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
-    column: $table.updatedAt,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -6467,31 +5362,6 @@ class $$ContactsTableFilterComposer
           }) => $$ContactIdentitiesTableFilterComposer(
             $db: $db,
             $table: $db.contactIdentities,
-            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-            joinBuilder: joinBuilder,
-            $removeJoinBuilderFromRootComposer:
-                $removeJoinBuilderFromRootComposer,
-          ),
-    );
-    return f(composer);
-  }
-
-  Expression<bool> messageParticipantsRefs(
-    Expression<bool> Function($$MessageParticipantsTableFilterComposer f) f,
-  ) {
-    final $$MessageParticipantsTableFilterComposer composer = $composerBuilder(
-      composer: this,
-      getCurrentColumn: (t) => t.id,
-      referencedTable: $db.messageParticipants,
-      getReferencedColumn: (t) => t.contactId,
-      builder:
-          (
-            joinBuilder, {
-            $addJoinBuilderToRootComposer,
-            $removeJoinBuilderFromRootComposer,
-          }) => $$MessageParticipantsTableFilterComposer(
-            $db: $db,
-            $table: $db.messageParticipants,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -6521,28 +5391,8 @@ class $$ContactsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<String> get primaryAvatarUrl => $composableBuilder(
-    column: $table.primaryAvatarUrl,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get kind => $composableBuilder(
-    column: $table.kind,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<bool> get isStub => $composableBuilder(
-    column: $table.isStub,
-    builder: (column) => ColumnOrderings(column),
-  );
-
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
-    column: $table.updatedAt,
     builder: (column) => ColumnOrderings(column),
   );
 }
@@ -6564,22 +5414,8 @@ class $$ContactsTableAnnotationComposer
     builder: (column) => column,
   );
 
-  GeneratedColumn<String> get primaryAvatarUrl => $composableBuilder(
-    column: $table.primaryAvatarUrl,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<String> get kind =>
-      $composableBuilder(column: $table.kind, builder: (column) => column);
-
-  GeneratedColumn<bool> get isStub =>
-      $composableBuilder(column: $table.isStub, builder: (column) => column);
-
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
-
-  GeneratedColumn<DateTime> get updatedAt =>
-      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
 
   Expression<T> contactIdentitiesRefs<T extends Object>(
     Expression<T> Function($$ContactIdentitiesTableAnnotationComposer a) f,
@@ -6606,32 +5442,6 @@ class $$ContactsTableAnnotationComposer
         );
     return f(composer);
   }
-
-  Expression<T> messageParticipantsRefs<T extends Object>(
-    Expression<T> Function($$MessageParticipantsTableAnnotationComposer a) f,
-  ) {
-    final $$MessageParticipantsTableAnnotationComposer composer =
-        $composerBuilder(
-          composer: this,
-          getCurrentColumn: (t) => t.id,
-          referencedTable: $db.messageParticipants,
-          getReferencedColumn: (t) => t.contactId,
-          builder:
-              (
-                joinBuilder, {
-                $addJoinBuilderToRootComposer,
-                $removeJoinBuilderFromRootComposer,
-              }) => $$MessageParticipantsTableAnnotationComposer(
-                $db: $db,
-                $table: $db.messageParticipants,
-                $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-                joinBuilder: joinBuilder,
-                $removeJoinBuilderFromRootComposer:
-                    $removeJoinBuilderFromRootComposer,
-              ),
-        );
-    return f(composer);
-  }
 }
 
 class $$ContactsTableTableManager
@@ -6647,10 +5457,7 @@ class $$ContactsTableTableManager
           $$ContactsTableUpdateCompanionBuilder,
           (Contact, $$ContactsTableReferences),
           Contact,
-          PrefetchHooks Function({
-            bool contactIdentitiesRefs,
-            bool messageParticipantsRefs,
-          })
+          PrefetchHooks Function({bool contactIdentitiesRefs})
         > {
   $$ContactsTableTableManager(_$AppDatabase db, $ContactsTable table)
     : super(
@@ -6667,37 +5474,21 @@ class $$ContactsTableTableManager
               ({
                 Value<int> id = const Value.absent(),
                 Value<String> displayName = const Value.absent(),
-                Value<String?> primaryAvatarUrl = const Value.absent(),
-                Value<String?> kind = const Value.absent(),
-                Value<bool> isStub = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
-                Value<DateTime> updatedAt = const Value.absent(),
               }) => ContactsCompanion(
                 id: id,
                 displayName: displayName,
-                primaryAvatarUrl: primaryAvatarUrl,
-                kind: kind,
-                isStub: isStub,
                 createdAt: createdAt,
-                updatedAt: updatedAt,
               ),
           createCompanionCallback:
               ({
                 Value<int> id = const Value.absent(),
                 required String displayName,
-                Value<String?> primaryAvatarUrl = const Value.absent(),
-                Value<String?> kind = const Value.absent(),
-                Value<bool> isStub = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
-                Value<DateTime> updatedAt = const Value.absent(),
               }) => ContactsCompanion.insert(
                 id: id,
                 displayName: displayName,
-                primaryAvatarUrl: primaryAvatarUrl,
-                kind: kind,
-                isStub: isStub,
                 createdAt: createdAt,
-                updatedAt: updatedAt,
               ),
           withReferenceMapper: (p0) => p0
               .map(
@@ -6707,66 +5498,37 @@ class $$ContactsTableTableManager
                 ),
               )
               .toList(),
-          prefetchHooksCallback:
-              ({
-                contactIdentitiesRefs = false,
-                messageParticipantsRefs = false,
-              }) {
-                return PrefetchHooks(
-                  db: db,
-                  explicitlyWatchedTables: [
-                    if (contactIdentitiesRefs) db.contactIdentities,
-                    if (messageParticipantsRefs) db.messageParticipants,
-                  ],
-                  addJoins: null,
-                  getPrefetchedDataCallback: (items) async {
-                    return [
-                      if (contactIdentitiesRefs)
-                        await $_getPrefetchedData<
-                          Contact,
-                          $ContactsTable,
-                          ContactIdentity
-                        >(
-                          currentTable: table,
-                          referencedTable: $$ContactsTableReferences
-                              ._contactIdentitiesRefsTable(db),
-                          managerFromTypedResult: (p0) =>
-                              $$ContactsTableReferences(
-                                db,
-                                table,
-                                p0,
-                              ).contactIdentitiesRefs,
-                          referencedItemsForCurrentItem:
-                              (item, referencedItems) => referencedItems.where(
-                                (e) => e.contactId == item.id,
-                              ),
-                          typedResults: items,
-                        ),
-                      if (messageParticipantsRefs)
-                        await $_getPrefetchedData<
-                          Contact,
-                          $ContactsTable,
-                          MessageParticipant
-                        >(
-                          currentTable: table,
-                          referencedTable: $$ContactsTableReferences
-                              ._messageParticipantsRefsTable(db),
-                          managerFromTypedResult: (p0) =>
-                              $$ContactsTableReferences(
-                                db,
-                                table,
-                                p0,
-                              ).messageParticipantsRefs,
-                          referencedItemsForCurrentItem:
-                              (item, referencedItems) => referencedItems.where(
-                                (e) => e.contactId == item.id,
-                              ),
-                          typedResults: items,
-                        ),
-                    ];
-                  },
-                );
+          prefetchHooksCallback: ({contactIdentitiesRefs = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [
+                if (contactIdentitiesRefs) db.contactIdentities,
+              ],
+              addJoins: null,
+              getPrefetchedDataCallback: (items) async {
+                return [
+                  if (contactIdentitiesRefs)
+                    await $_getPrefetchedData<
+                      Contact,
+                      $ContactsTable,
+                      ContactIdentity
+                    >(
+                      currentTable: table,
+                      referencedTable: $$ContactsTableReferences
+                          ._contactIdentitiesRefsTable(db),
+                      managerFromTypedResult: (p0) => $$ContactsTableReferences(
+                        db,
+                        table,
+                        p0,
+                      ).contactIdentitiesRefs,
+                      referencedItemsForCurrentItem: (item, referencedItems) =>
+                          referencedItems.where((e) => e.contactId == item.id),
+                      typedResults: items,
+                    ),
+                ];
               },
+            );
+          },
         ),
       );
 }
@@ -6783,10 +5545,7 @@ typedef $$ContactsTableProcessedTableManager =
       $$ContactsTableUpdateCompanionBuilder,
       (Contact, $$ContactsTableReferences),
       Contact,
-      PrefetchHooks Function({
-        bool contactIdentitiesRefs,
-        bool messageParticipantsRefs,
-      })
+      PrefetchHooks Function({bool contactIdentitiesRefs})
     >;
 typedef $$ContactIdentitiesTableCreateCompanionBuilder =
     ContactIdentitiesCompanion Function({
@@ -6794,12 +5553,9 @@ typedef $$ContactIdentitiesTableCreateCompanionBuilder =
       required int contactId,
       required String source,
       required String externalId,
-      Value<String?> displayNameSnapshot,
-      Value<String?> avatarUrlSnapshot,
-      Value<String?> rawPayloadJson,
+      Value<String?> displayName,
+      Value<String?> avatarUrl,
       required DateTime lastSeenAt,
-      Value<DateTime?> lastEnrichedAt,
-      Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
     });
 typedef $$ContactIdentitiesTableUpdateCompanionBuilder =
@@ -6808,12 +5564,9 @@ typedef $$ContactIdentitiesTableUpdateCompanionBuilder =
       Value<int> contactId,
       Value<String> source,
       Value<String> externalId,
-      Value<String?> displayNameSnapshot,
-      Value<String?> avatarUrlSnapshot,
-      Value<String?> rawPayloadJson,
+      Value<String?> displayName,
+      Value<String?> avatarUrl,
       Value<DateTime> lastSeenAt,
-      Value<DateTime?> lastEnrichedAt,
-      Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
     });
 
@@ -6901,33 +5654,18 @@ class $$ContactIdentitiesTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnFilters<String> get displayNameSnapshot => $composableBuilder(
-    column: $table.displayNameSnapshot,
+  ColumnFilters<String> get displayName => $composableBuilder(
+    column: $table.displayName,
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnFilters<String> get avatarUrlSnapshot => $composableBuilder(
-    column: $table.avatarUrlSnapshot,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get rawPayloadJson => $composableBuilder(
-    column: $table.rawPayloadJson,
+  ColumnFilters<String> get avatarUrl => $composableBuilder(
+    column: $table.avatarUrl,
     builder: (column) => ColumnFilters(column),
   );
 
   ColumnFilters<DateTime> get lastSeenAt => $composableBuilder(
     column: $table.lastSeenAt,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<DateTime> get lastEnrichedAt => $composableBuilder(
-    column: $table.lastEnrichedAt,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<DateTime> get createdAt => $composableBuilder(
-    column: $table.createdAt,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -7009,33 +5747,18 @@ class $$ContactIdentitiesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<String> get displayNameSnapshot => $composableBuilder(
-    column: $table.displayNameSnapshot,
+  ColumnOrderings<String> get displayName => $composableBuilder(
+    column: $table.displayName,
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<String> get avatarUrlSnapshot => $composableBuilder(
-    column: $table.avatarUrlSnapshot,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get rawPayloadJson => $composableBuilder(
-    column: $table.rawPayloadJson,
+  ColumnOrderings<String> get avatarUrl => $composableBuilder(
+    column: $table.avatarUrl,
     builder: (column) => ColumnOrderings(column),
   );
 
   ColumnOrderings<DateTime> get lastSeenAt => $composableBuilder(
     column: $table.lastSeenAt,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<DateTime> get lastEnrichedAt => $composableBuilder(
-    column: $table.lastEnrichedAt,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
-    column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
   );
 
@@ -7088,33 +5811,18 @@ class $$ContactIdentitiesTableAnnotationComposer
     builder: (column) => column,
   );
 
-  GeneratedColumn<String> get displayNameSnapshot => $composableBuilder(
-    column: $table.displayNameSnapshot,
+  GeneratedColumn<String> get displayName => $composableBuilder(
+    column: $table.displayName,
     builder: (column) => column,
   );
 
-  GeneratedColumn<String> get avatarUrlSnapshot => $composableBuilder(
-    column: $table.avatarUrlSnapshot,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<String> get rawPayloadJson => $composableBuilder(
-    column: $table.rawPayloadJson,
-    builder: (column) => column,
-  );
+  GeneratedColumn<String> get avatarUrl =>
+      $composableBuilder(column: $table.avatarUrl, builder: (column) => column);
 
   GeneratedColumn<DateTime> get lastSeenAt => $composableBuilder(
     column: $table.lastSeenAt,
     builder: (column) => column,
   );
-
-  GeneratedColumn<DateTime> get lastEnrichedAt => $composableBuilder(
-    column: $table.lastEnrichedAt,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<DateTime> get createdAt =>
-      $composableBuilder(column: $table.createdAt, builder: (column) => column);
 
   GeneratedColumn<DateTime> get updatedAt =>
       $composableBuilder(column: $table.updatedAt, builder: (column) => column);
@@ -7206,24 +5914,18 @@ class $$ContactIdentitiesTableTableManager
                 Value<int> contactId = const Value.absent(),
                 Value<String> source = const Value.absent(),
                 Value<String> externalId = const Value.absent(),
-                Value<String?> displayNameSnapshot = const Value.absent(),
-                Value<String?> avatarUrlSnapshot = const Value.absent(),
-                Value<String?> rawPayloadJson = const Value.absent(),
+                Value<String?> displayName = const Value.absent(),
+                Value<String?> avatarUrl = const Value.absent(),
                 Value<DateTime> lastSeenAt = const Value.absent(),
-                Value<DateTime?> lastEnrichedAt = const Value.absent(),
-                Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
               }) => ContactIdentitiesCompanion(
                 id: id,
                 contactId: contactId,
                 source: source,
                 externalId: externalId,
-                displayNameSnapshot: displayNameSnapshot,
-                avatarUrlSnapshot: avatarUrlSnapshot,
-                rawPayloadJson: rawPayloadJson,
+                displayName: displayName,
+                avatarUrl: avatarUrl,
                 lastSeenAt: lastSeenAt,
-                lastEnrichedAt: lastEnrichedAt,
-                createdAt: createdAt,
                 updatedAt: updatedAt,
               ),
           createCompanionCallback:
@@ -7232,24 +5934,18 @@ class $$ContactIdentitiesTableTableManager
                 required int contactId,
                 required String source,
                 required String externalId,
-                Value<String?> displayNameSnapshot = const Value.absent(),
-                Value<String?> avatarUrlSnapshot = const Value.absent(),
-                Value<String?> rawPayloadJson = const Value.absent(),
+                Value<String?> displayName = const Value.absent(),
+                Value<String?> avatarUrl = const Value.absent(),
                 required DateTime lastSeenAt,
-                Value<DateTime?> lastEnrichedAt = const Value.absent(),
-                Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
               }) => ContactIdentitiesCompanion.insert(
                 id: id,
                 contactId: contactId,
                 source: source,
                 externalId: externalId,
-                displayNameSnapshot: displayNameSnapshot,
-                avatarUrlSnapshot: avatarUrlSnapshot,
-                rawPayloadJson: rawPayloadJson,
+                displayName: displayName,
+                avatarUrl: avatarUrl,
                 lastSeenAt: lastSeenAt,
-                lastEnrichedAt: lastEnrichedAt,
-                createdAt: createdAt,
                 updatedAt: updatedAt,
               ),
           withReferenceMapper: (p0) => p0
@@ -7353,20 +6049,13 @@ typedef $$MessagesTableCreateCompanionBuilder =
       required String externalId,
       required String mailbox,
       Value<String> subject,
-      Value<String?> bodyRaw,
-      Value<String?> bodyText,
-      Value<String?> bodyFormat,
-      Value<DateTime?> sentAt,
+      Value<String?> senderAvatarUrl,
       required DateTime receivedAt,
-      Value<DateTime?> remoteUpdatedAt,
       Value<bool> isRead,
       Value<bool> isArchived,
       Value<bool> isDeleted,
       Value<bool> hasAttachments,
-      Value<DateTime?> detailFetchedAt,
       Value<String?> headerFingerprint,
-      Value<String?> rawHeaderJson,
-      Value<String?> rawDetailJson,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
     });
@@ -7377,20 +6066,13 @@ typedef $$MessagesTableUpdateCompanionBuilder =
       Value<String> externalId,
       Value<String> mailbox,
       Value<String> subject,
-      Value<String?> bodyRaw,
-      Value<String?> bodyText,
-      Value<String?> bodyFormat,
-      Value<DateTime?> sentAt,
+      Value<String?> senderAvatarUrl,
       Value<DateTime> receivedAt,
-      Value<DateTime?> remoteUpdatedAt,
       Value<bool> isRead,
       Value<bool> isArchived,
       Value<bool> isDeleted,
       Value<bool> hasAttachments,
-      Value<DateTime?> detailFetchedAt,
       Value<String?> headerFingerprint,
-      Value<String?> rawHeaderJson,
-      Value<String?> rawDetailJson,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
     });
@@ -7485,33 +6167,13 @@ class $$MessagesTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnFilters<String> get bodyRaw => $composableBuilder(
-    column: $table.bodyRaw,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get bodyText => $composableBuilder(
-    column: $table.bodyText,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get bodyFormat => $composableBuilder(
-    column: $table.bodyFormat,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<DateTime> get sentAt => $composableBuilder(
-    column: $table.sentAt,
+  ColumnFilters<String> get senderAvatarUrl => $composableBuilder(
+    column: $table.senderAvatarUrl,
     builder: (column) => ColumnFilters(column),
   );
 
   ColumnFilters<DateTime> get receivedAt => $composableBuilder(
     column: $table.receivedAt,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<DateTime> get remoteUpdatedAt => $composableBuilder(
-    column: $table.remoteUpdatedAt,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -7535,23 +6197,8 @@ class $$MessagesTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnFilters<DateTime> get detailFetchedAt => $composableBuilder(
-    column: $table.detailFetchedAt,
-    builder: (column) => ColumnFilters(column),
-  );
-
   ColumnFilters<String> get headerFingerprint => $composableBuilder(
     column: $table.headerFingerprint,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get rawHeaderJson => $composableBuilder(
-    column: $table.rawHeaderJson,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get rawDetailJson => $composableBuilder(
-    column: $table.rawDetailJson,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -7650,33 +6297,13 @@ class $$MessagesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<String> get bodyRaw => $composableBuilder(
-    column: $table.bodyRaw,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get bodyText => $composableBuilder(
-    column: $table.bodyText,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get bodyFormat => $composableBuilder(
-    column: $table.bodyFormat,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<DateTime> get sentAt => $composableBuilder(
-    column: $table.sentAt,
+  ColumnOrderings<String> get senderAvatarUrl => $composableBuilder(
+    column: $table.senderAvatarUrl,
     builder: (column) => ColumnOrderings(column),
   );
 
   ColumnOrderings<DateTime> get receivedAt => $composableBuilder(
     column: $table.receivedAt,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<DateTime> get remoteUpdatedAt => $composableBuilder(
-    column: $table.remoteUpdatedAt,
     builder: (column) => ColumnOrderings(column),
   );
 
@@ -7700,23 +6327,8 @@ class $$MessagesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<DateTime> get detailFetchedAt => $composableBuilder(
-    column: $table.detailFetchedAt,
-    builder: (column) => ColumnOrderings(column),
-  );
-
   ColumnOrderings<String> get headerFingerprint => $composableBuilder(
     column: $table.headerFingerprint,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get rawHeaderJson => $composableBuilder(
-    column: $table.rawHeaderJson,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get rawDetailJson => $composableBuilder(
-    column: $table.rawDetailJson,
     builder: (column) => ColumnOrderings(column),
   );
 
@@ -7757,27 +6369,13 @@ class $$MessagesTableAnnotationComposer
   GeneratedColumn<String> get subject =>
       $composableBuilder(column: $table.subject, builder: (column) => column);
 
-  GeneratedColumn<String> get bodyRaw =>
-      $composableBuilder(column: $table.bodyRaw, builder: (column) => column);
-
-  GeneratedColumn<String> get bodyText =>
-      $composableBuilder(column: $table.bodyText, builder: (column) => column);
-
-  GeneratedColumn<String> get bodyFormat => $composableBuilder(
-    column: $table.bodyFormat,
+  GeneratedColumn<String> get senderAvatarUrl => $composableBuilder(
+    column: $table.senderAvatarUrl,
     builder: (column) => column,
   );
-
-  GeneratedColumn<DateTime> get sentAt =>
-      $composableBuilder(column: $table.sentAt, builder: (column) => column);
 
   GeneratedColumn<DateTime> get receivedAt => $composableBuilder(
     column: $table.receivedAt,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<DateTime> get remoteUpdatedAt => $composableBuilder(
-    column: $table.remoteUpdatedAt,
     builder: (column) => column,
   );
 
@@ -7797,23 +6395,8 @@ class $$MessagesTableAnnotationComposer
     builder: (column) => column,
   );
 
-  GeneratedColumn<DateTime> get detailFetchedAt => $composableBuilder(
-    column: $table.detailFetchedAt,
-    builder: (column) => column,
-  );
-
   GeneratedColumn<String> get headerFingerprint => $composableBuilder(
     column: $table.headerFingerprint,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<String> get rawHeaderJson => $composableBuilder(
-    column: $table.rawHeaderJson,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<String> get rawDetailJson => $composableBuilder(
-    column: $table.rawDetailJson,
     builder: (column) => column,
   );
 
@@ -7912,20 +6495,13 @@ class $$MessagesTableTableManager
                 Value<String> externalId = const Value.absent(),
                 Value<String> mailbox = const Value.absent(),
                 Value<String> subject = const Value.absent(),
-                Value<String?> bodyRaw = const Value.absent(),
-                Value<String?> bodyText = const Value.absent(),
-                Value<String?> bodyFormat = const Value.absent(),
-                Value<DateTime?> sentAt = const Value.absent(),
+                Value<String?> senderAvatarUrl = const Value.absent(),
                 Value<DateTime> receivedAt = const Value.absent(),
-                Value<DateTime?> remoteUpdatedAt = const Value.absent(),
                 Value<bool> isRead = const Value.absent(),
                 Value<bool> isArchived = const Value.absent(),
                 Value<bool> isDeleted = const Value.absent(),
                 Value<bool> hasAttachments = const Value.absent(),
-                Value<DateTime?> detailFetchedAt = const Value.absent(),
                 Value<String?> headerFingerprint = const Value.absent(),
-                Value<String?> rawHeaderJson = const Value.absent(),
-                Value<String?> rawDetailJson = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
               }) => MessagesCompanion(
@@ -7934,20 +6510,13 @@ class $$MessagesTableTableManager
                 externalId: externalId,
                 mailbox: mailbox,
                 subject: subject,
-                bodyRaw: bodyRaw,
-                bodyText: bodyText,
-                bodyFormat: bodyFormat,
-                sentAt: sentAt,
+                senderAvatarUrl: senderAvatarUrl,
                 receivedAt: receivedAt,
-                remoteUpdatedAt: remoteUpdatedAt,
                 isRead: isRead,
                 isArchived: isArchived,
                 isDeleted: isDeleted,
                 hasAttachments: hasAttachments,
-                detailFetchedAt: detailFetchedAt,
                 headerFingerprint: headerFingerprint,
-                rawHeaderJson: rawHeaderJson,
-                rawDetailJson: rawDetailJson,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
               ),
@@ -7958,20 +6527,13 @@ class $$MessagesTableTableManager
                 required String externalId,
                 required String mailbox,
                 Value<String> subject = const Value.absent(),
-                Value<String?> bodyRaw = const Value.absent(),
-                Value<String?> bodyText = const Value.absent(),
-                Value<String?> bodyFormat = const Value.absent(),
-                Value<DateTime?> sentAt = const Value.absent(),
+                Value<String?> senderAvatarUrl = const Value.absent(),
                 required DateTime receivedAt,
-                Value<DateTime?> remoteUpdatedAt = const Value.absent(),
                 Value<bool> isRead = const Value.absent(),
                 Value<bool> isArchived = const Value.absent(),
                 Value<bool> isDeleted = const Value.absent(),
                 Value<bool> hasAttachments = const Value.absent(),
-                Value<DateTime?> detailFetchedAt = const Value.absent(),
                 Value<String?> headerFingerprint = const Value.absent(),
-                Value<String?> rawHeaderJson = const Value.absent(),
-                Value<String?> rawDetailJson = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
               }) => MessagesCompanion.insert(
@@ -7980,20 +6542,13 @@ class $$MessagesTableTableManager
                 externalId: externalId,
                 mailbox: mailbox,
                 subject: subject,
-                bodyRaw: bodyRaw,
-                bodyText: bodyText,
-                bodyFormat: bodyFormat,
-                sentAt: sentAt,
+                senderAvatarUrl: senderAvatarUrl,
                 receivedAt: receivedAt,
-                remoteUpdatedAt: remoteUpdatedAt,
                 isRead: isRead,
                 isArchived: isArchived,
                 isDeleted: isDeleted,
                 hasAttachments: hasAttachments,
-                detailFetchedAt: detailFetchedAt,
                 headerFingerprint: headerFingerprint,
-                rawHeaderJson: rawHeaderJson,
-                rawDetailJson: rawDetailJson,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
               ),
@@ -8090,25 +6645,15 @@ typedef $$MessageParticipantsTableCreateCompanionBuilder =
     MessageParticipantsCompanion Function({
       Value<int> id,
       required int messageId,
-      Value<int?> contactId,
-      Value<int?> contactIdentityId,
+      required int contactIdentityId,
       required String role,
-      Value<int> position,
-      required String displayNameSnapshot,
-      Value<String?> addressSnapshot,
-      Value<DateTime> createdAt,
     });
 typedef $$MessageParticipantsTableUpdateCompanionBuilder =
     MessageParticipantsCompanion Function({
       Value<int> id,
       Value<int> messageId,
-      Value<int?> contactId,
-      Value<int?> contactIdentityId,
+      Value<int> contactIdentityId,
       Value<String> role,
-      Value<int> position,
-      Value<String> displayNameSnapshot,
-      Value<String?> addressSnapshot,
-      Value<DateTime> createdAt,
     });
 
 final class $$MessageParticipantsTableReferences
@@ -8143,25 +6688,6 @@ final class $$MessageParticipantsTableReferences
     );
   }
 
-  static $ContactsTable _contactIdTable(_$AppDatabase db) =>
-      db.contacts.createAlias(
-        $_aliasNameGenerator(db.messageParticipants.contactId, db.contacts.id),
-      );
-
-  $$ContactsTableProcessedTableManager? get contactId {
-    final $_column = $_itemColumn<int>('contact_id');
-    if ($_column == null) return null;
-    final manager = $$ContactsTableTableManager(
-      $_db,
-      $_db.contacts,
-    ).filter((f) => f.id.sqlEquals($_column));
-    final item = $_typedResult.readTableOrNull(_contactIdTable($_db));
-    if (item == null) return manager;
-    return ProcessedTableManager(
-      manager.$state.copyWith(prefetchedData: [item]),
-    );
-  }
-
   static $ContactIdentitiesTable _contactIdentityIdTable(_$AppDatabase db) =>
       db.contactIdentities.createAlias(
         $_aliasNameGenerator(
@@ -8170,9 +6696,9 @@ final class $$MessageParticipantsTableReferences
         ),
       );
 
-  $$ContactIdentitiesTableProcessedTableManager? get contactIdentityId {
-    final $_column = $_itemColumn<int>('contact_identity_id');
-    if ($_column == null) return null;
+  $$ContactIdentitiesTableProcessedTableManager get contactIdentityId {
+    final $_column = $_itemColumn<int>('contact_identity_id')!;
+
     final manager = $$ContactIdentitiesTableTableManager(
       $_db,
       $_db.contactIdentities,
@@ -8204,26 +6730,6 @@ class $$MessageParticipantsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnFilters<int> get position => $composableBuilder(
-    column: $table.position,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get displayNameSnapshot => $composableBuilder(
-    column: $table.displayNameSnapshot,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get addressSnapshot => $composableBuilder(
-    column: $table.addressSnapshot,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<DateTime> get createdAt => $composableBuilder(
-    column: $table.createdAt,
-    builder: (column) => ColumnFilters(column),
-  );
-
   $$MessagesTableFilterComposer get messageId {
     final $$MessagesTableFilterComposer composer = $composerBuilder(
       composer: this,
@@ -8238,29 +6744,6 @@ class $$MessageParticipantsTableFilterComposer
           }) => $$MessagesTableFilterComposer(
             $db: $db,
             $table: $db.messages,
-            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-            joinBuilder: joinBuilder,
-            $removeJoinBuilderFromRootComposer:
-                $removeJoinBuilderFromRootComposer,
-          ),
-    );
-    return composer;
-  }
-
-  $$ContactsTableFilterComposer get contactId {
-    final $$ContactsTableFilterComposer composer = $composerBuilder(
-      composer: this,
-      getCurrentColumn: (t) => t.contactId,
-      referencedTable: $db.contacts,
-      getReferencedColumn: (t) => t.id,
-      builder:
-          (
-            joinBuilder, {
-            $addJoinBuilderToRootComposer,
-            $removeJoinBuilderFromRootComposer,
-          }) => $$ContactsTableFilterComposer(
-            $db: $db,
-            $table: $db.contacts,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -8313,26 +6796,6 @@ class $$MessageParticipantsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<int> get position => $composableBuilder(
-    column: $table.position,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get displayNameSnapshot => $composableBuilder(
-    column: $table.displayNameSnapshot,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get addressSnapshot => $composableBuilder(
-    column: $table.addressSnapshot,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
-    column: $table.createdAt,
-    builder: (column) => ColumnOrderings(column),
-  );
-
   $$MessagesTableOrderingComposer get messageId {
     final $$MessagesTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -8347,29 +6810,6 @@ class $$MessageParticipantsTableOrderingComposer
           }) => $$MessagesTableOrderingComposer(
             $db: $db,
             $table: $db.messages,
-            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-            joinBuilder: joinBuilder,
-            $removeJoinBuilderFromRootComposer:
-                $removeJoinBuilderFromRootComposer,
-          ),
-    );
-    return composer;
-  }
-
-  $$ContactsTableOrderingComposer get contactId {
-    final $$ContactsTableOrderingComposer composer = $composerBuilder(
-      composer: this,
-      getCurrentColumn: (t) => t.contactId,
-      referencedTable: $db.contacts,
-      getReferencedColumn: (t) => t.id,
-      builder:
-          (
-            joinBuilder, {
-            $addJoinBuilderToRootComposer,
-            $removeJoinBuilderFromRootComposer,
-          }) => $$ContactsTableOrderingComposer(
-            $db: $db,
-            $table: $db.contacts,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -8418,22 +6858,6 @@ class $$MessageParticipantsTableAnnotationComposer
   GeneratedColumn<String> get role =>
       $composableBuilder(column: $table.role, builder: (column) => column);
 
-  GeneratedColumn<int> get position =>
-      $composableBuilder(column: $table.position, builder: (column) => column);
-
-  GeneratedColumn<String> get displayNameSnapshot => $composableBuilder(
-    column: $table.displayNameSnapshot,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<String> get addressSnapshot => $composableBuilder(
-    column: $table.addressSnapshot,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<DateTime> get createdAt =>
-      $composableBuilder(column: $table.createdAt, builder: (column) => column);
-
   $$MessagesTableAnnotationComposer get messageId {
     final $$MessagesTableAnnotationComposer composer = $composerBuilder(
       composer: this,
@@ -8448,29 +6872,6 @@ class $$MessageParticipantsTableAnnotationComposer
           }) => $$MessagesTableAnnotationComposer(
             $db: $db,
             $table: $db.messages,
-            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-            joinBuilder: joinBuilder,
-            $removeJoinBuilderFromRootComposer:
-                $removeJoinBuilderFromRootComposer,
-          ),
-    );
-    return composer;
-  }
-
-  $$ContactsTableAnnotationComposer get contactId {
-    final $$ContactsTableAnnotationComposer composer = $composerBuilder(
-      composer: this,
-      getCurrentColumn: (t) => t.contactId,
-      referencedTable: $db.contacts,
-      getReferencedColumn: (t) => t.id,
-      builder:
-          (
-            joinBuilder, {
-            $addJoinBuilderToRootComposer,
-            $removeJoinBuilderFromRootComposer,
-          }) => $$ContactsTableAnnotationComposer(
-            $db: $db,
-            $table: $db.contacts,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -8518,11 +6919,7 @@ class $$MessageParticipantsTableTableManager
           $$MessageParticipantsTableUpdateCompanionBuilder,
           (MessageParticipant, $$MessageParticipantsTableReferences),
           MessageParticipant,
-          PrefetchHooks Function({
-            bool messageId,
-            bool contactId,
-            bool contactIdentityId,
-          })
+          PrefetchHooks Function({bool messageId, bool contactIdentityId})
         > {
   $$MessageParticipantsTableTableManager(
     _$AppDatabase db,
@@ -8547,45 +6944,25 @@ class $$MessageParticipantsTableTableManager
               ({
                 Value<int> id = const Value.absent(),
                 Value<int> messageId = const Value.absent(),
-                Value<int?> contactId = const Value.absent(),
-                Value<int?> contactIdentityId = const Value.absent(),
+                Value<int> contactIdentityId = const Value.absent(),
                 Value<String> role = const Value.absent(),
-                Value<int> position = const Value.absent(),
-                Value<String> displayNameSnapshot = const Value.absent(),
-                Value<String?> addressSnapshot = const Value.absent(),
-                Value<DateTime> createdAt = const Value.absent(),
               }) => MessageParticipantsCompanion(
                 id: id,
                 messageId: messageId,
-                contactId: contactId,
                 contactIdentityId: contactIdentityId,
                 role: role,
-                position: position,
-                displayNameSnapshot: displayNameSnapshot,
-                addressSnapshot: addressSnapshot,
-                createdAt: createdAt,
               ),
           createCompanionCallback:
               ({
                 Value<int> id = const Value.absent(),
                 required int messageId,
-                Value<int?> contactId = const Value.absent(),
-                Value<int?> contactIdentityId = const Value.absent(),
+                required int contactIdentityId,
                 required String role,
-                Value<int> position = const Value.absent(),
-                required String displayNameSnapshot,
-                Value<String?> addressSnapshot = const Value.absent(),
-                Value<DateTime> createdAt = const Value.absent(),
               }) => MessageParticipantsCompanion.insert(
                 id: id,
                 messageId: messageId,
-                contactId: contactId,
                 contactIdentityId: contactIdentityId,
                 role: role,
-                position: position,
-                displayNameSnapshot: displayNameSnapshot,
-                addressSnapshot: addressSnapshot,
-                createdAt: createdAt,
               ),
           withReferenceMapper: (p0) => p0
               .map(
@@ -8596,11 +6973,7 @@ class $$MessageParticipantsTableTableManager
               )
               .toList(),
           prefetchHooksCallback:
-              ({
-                messageId = false,
-                contactId = false,
-                contactIdentityId = false,
-              }) {
+              ({messageId = false, contactIdentityId = false}) {
                 return PrefetchHooks(
                   db: db,
                   explicitlyWatchedTables: [],
@@ -8631,21 +7004,6 @@ class $$MessageParticipantsTableTableManager
                                     referencedColumn:
                                         $$MessageParticipantsTableReferences
                                             ._messageIdTable(db)
-                                            .id,
-                                  )
-                                  as T;
-                        }
-                        if (contactId) {
-                          state =
-                              state.withJoin(
-                                    currentTable: table,
-                                    currentColumn: table.contactId,
-                                    referencedTable:
-                                        $$MessageParticipantsTableReferences
-                                            ._contactIdTable(db),
-                                    referencedColumn:
-                                        $$MessageParticipantsTableReferences
-                                            ._contactIdTable(db)
                                             .id,
                                   )
                                   as T;
@@ -8689,11 +7047,7 @@ typedef $$MessageParticipantsTableProcessedTableManager =
       $$MessageParticipantsTableUpdateCompanionBuilder,
       (MessageParticipant, $$MessageParticipantsTableReferences),
       MessageParticipant,
-      PrefetchHooks Function({
-        bool messageId,
-        bool contactId,
-        bool contactIdentityId,
-      })
+      PrefetchHooks Function({bool messageId, bool contactIdentityId})
     >;
 typedef $$MessageAttachmentsTableCreateCompanionBuilder =
     MessageAttachmentsCompanion Function({

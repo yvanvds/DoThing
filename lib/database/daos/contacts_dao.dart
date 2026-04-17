@@ -1,4 +1,4 @@
-﻿import 'package:drift/drift.dart';
+import 'package:drift/drift.dart';
 
 import '../app_database.dart';
 
@@ -11,46 +11,37 @@ class ContactsDao extends DatabaseAccessor<AppDatabase>
 
   // ── Contacts ────────────────────────────────────────────────────────────
 
-  Future<Contact> insertStubContact({
-    required String displayName,
-    String? avatarUrl,
-    String? kind,
-  }) async {
+  /// Insert a new contact row. Returns the full row.
+  Future<Contact> insertContact(String displayName) async {
     final id = await into(contacts).insert(
-      ContactsCompanion.insert(
-        displayName: displayName,
-        primaryAvatarUrl: Value(avatarUrl),
-        kind: Value(kind),
-        isStub: const Value(true),
-        updatedAt: Value(DateTime.now()),
-      ),
+      ContactsCompanion.insert(displayName: displayName),
     );
     return (select(contacts)..where((t) => t.id.equals(id))).getSingle();
-  }
-
-  Future<void> enrichContact(
-    int contactId, {
-    required String displayName,
-    String? avatarUrl,
-    String? kind,
-  }) async {
-    await (update(contacts)..where((t) => t.id.equals(contactId))).write(
-      ContactsCompanion(
-        displayName: Value(displayName),
-        primaryAvatarUrl: Value(avatarUrl),
-        kind: Value(kind),
-        isStub: const Value(false),
-        updatedAt: Value(DateTime.now()),
-      ),
-    );
   }
 
   Future<Contact?> getContactById(int id) =>
       (select(contacts)..where((t) => t.id.equals(id))).getSingleOrNull();
 
+  /// Find an existing contact by case-insensitive display name, or create one.
+  ///
+  /// Returns the contact id.
+  Future<int> findOrCreateContactByDisplayName(String displayName) async {
+    final normalized = displayName.trim().toLowerCase();
+    if (normalized.isNotEmpty) {
+      final existing = await customSelect(
+        'SELECT id FROM contacts WHERE LOWER(TRIM(display_name)) = ? LIMIT 1',
+        variables: [Variable<String>(normalized)],
+        readsFrom: {contacts},
+      ).getSingleOrNull();
+      if (existing != null) return existing.read<int>('id');
+    }
+
+    final name = displayName.trim().isNotEmpty ? displayName.trim() : 'Unknown';
+    return into(contacts).insert(ContactsCompanion.insert(displayName: name));
+  }
+
   // ── ContactIdentities ───────────────────────────────────────────────────
 
-  /// Returns the existing identity, or null if not found.
   Future<ContactIdentity?> findIdentity({
     required String source,
     required String externalId,
@@ -62,111 +53,58 @@ class ContactsDao extends DatabaseAccessor<AppDatabase>
 
   /// Upsert a contact identity by (source, externalId).
   ///
-  /// If the identity does not exist a new stub contact is created and linked.
-  /// Returns the resolved [contactId].
+  /// [externalId] must be a stable provider-assigned ID (never a display-name
+  /// derived key such as 'display:...'). Throws [ArgumentError] otherwise.
   ///
-  /// When the identity already exists or a contact is matched by display name,
-  /// [primaryAvatarUrl] on the contact row is also updated whenever [avatarUrl]
-  /// is a valid HTTP(S) URL.
+  /// If the identity does not exist, a contact is found or created by display
+  /// name and the identity row is inserted.
+  ///
+  /// Returns the identity row id.
   Future<int> upsertIdentity({
     required String source,
     required String externalId,
     required String displayName,
     String? avatarUrl,
-    String? rawPayloadJson,
   }) async {
+    assert(
+      !externalId.startsWith('display:'),
+      'externalId must be a stable provider ID, got: $externalId',
+    );
+
     final existing = await findIdentity(source: source, externalId: externalId);
 
     if (existing != null) {
-      // Update snapshot fields and lastSeenAt.
-      await (update(
-        contactIdentities,
-      )..where((t) => t.id.equals(existing.id))).write(
+      await (update(contactIdentities)..where(
+            (t) => t.id.equals(existing.id),
+          ))
+          .write(
         ContactIdentitiesCompanion(
-          displayNameSnapshot: Value(displayName),
-          avatarUrlSnapshot: Value(avatarUrl),
-          rawPayloadJson: Value(rawPayloadJson),
+          displayName: Value(displayName),
+          avatarUrl: Value(avatarUrl),
           lastSeenAt: Value(DateTime.now()),
           updatedAt: Value(DateTime.now()),
         ),
       );
-      if (_isValidAvatarUrl(avatarUrl)) {
-        await (update(
-          contacts,
-        )..where((t) => t.id.equals(existing.contactId))).write(
-          ContactsCompanion(
-            primaryAvatarUrl: Value(avatarUrl),
-            updatedAt: Value(DateTime.now()),
-          ),
-        );
-      }
-      return existing.contactId;
+      return existing.id;
     }
 
-    // No identity yet -> try to link by display name (case-insensitive)
-    // before creating a new stub contact.
-    final normalizedName = displayName.trim().toLowerCase();
-    int contactId;
-    if (normalizedName.isNotEmpty) {
-      final linkedByName = await customSelect(
-        '''
-        SELECT id
-        FROM contacts
-        WHERE LOWER(TRIM(display_name)) = ?
-        LIMIT 1
-        ''',
-        variables: [Variable<String>(normalizedName)],
-        readsFrom: {contacts},
-      ).getSingleOrNull();
-
-      if (linkedByName != null) {
-        contactId = linkedByName.read<int>('id');
-        if (_isValidAvatarUrl(avatarUrl)) {
-          await (update(contacts)..where((t) => t.id.equals(contactId))).write(
-            ContactsCompanion(
-              primaryAvatarUrl: Value(avatarUrl),
-              updatedAt: Value(DateTime.now()),
-            ),
-          );
-        }
-      } else {
-        final contact = await insertStubContact(
-          displayName: displayName,
-          avatarUrl: avatarUrl,
-        );
-        contactId = contact.id;
-      }
-    } else {
-      final contact = await insertStubContact(
-        displayName: displayName,
-        avatarUrl: avatarUrl,
-      );
-      contactId = contact.id;
-    }
-
-    await into(contactIdentities).insert(
+    final contactId = await findOrCreateContactByDisplayName(displayName);
+    return into(contactIdentities).insert(
       ContactIdentitiesCompanion.insert(
         contactId: contactId,
         source: source,
         externalId: externalId,
-        displayNameSnapshot: Value(displayName),
-        avatarUrlSnapshot: Value(avatarUrl),
-        rawPayloadJson: Value(rawPayloadJson),
+        displayName: Value(displayName),
+        avatarUrl: Value(avatarUrl),
         lastSeenAt: DateTime.now(),
         updatedAt: Value(DateTime.now()),
       ),
     );
-
-    return contactId;
-  }
-
-  bool _isValidAvatarUrl(String? url) {
-    if (url == null || url.isEmpty) return false;
-    return url.startsWith('http://') || url.startsWith('https://');
   }
 
   Stream<List<ContactIdentity>> watchIdentitiesForContact(int contactId) =>
-      (select(
-        contactIdentities,
-      )..where((t) => t.contactId.equals(contactId))).watch();
+      (select(contactIdentities)..where(
+            (t) => t.contactId.equals(contactId),
+          ))
+          .watch();
 }

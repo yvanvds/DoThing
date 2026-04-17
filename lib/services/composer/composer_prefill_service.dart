@@ -6,6 +6,7 @@ import '../../controllers/composer_visibility_controller.dart';
 import '../../controllers/smartschool_settings_controller.dart';
 import '../../models/ai/reply_quote_summary.dart';
 import '../../models/draft_message.dart';
+import '../../models/smartschool_message.dart';
 import '../../models/recipients/recipient_chip.dart';
 import '../../models/recipients/recipient_chip_source.dart';
 import '../../models/recipients/recipient_endpoint.dart';
@@ -99,6 +100,7 @@ class ComposerPrefillService {
     final messages = ref.read(smartschoolMessagesProvider.notifier);
     final detailList = await messages.getMessage(
       header.id,
+      boxType: _smartschoolBoxTypeForHeader(header),
       reportStatus: false,
     );
     final detail = detailList.isEmpty ? null : detailList.first;
@@ -107,7 +109,9 @@ class ComposerPrefillService {
     final senderName = (detail?.from ?? header.from).trim();
     final sentAt = (detail?.sendDate ?? detail?.date ?? header.date).trim();
 
-    final senderChip = _smartschoolChipFromName(senderName);
+    final senderChip = detail == null
+        ? _smartschoolChipFromName(senderName)
+        : _smartschoolChipForSender(detail, senderName);
     final to = <RecipientChip>[];
     final cc = <RecipientChip>[];
     final bcc = <RecipientChip>[];
@@ -120,21 +124,34 @@ class ComposerPrefillService {
     }
 
     if (action == ComposerPrefillAction.replyAll && detail != null) {
-      final toNames = _parseSmartschoolRecipients(detail.receivers);
-      final ccNames = _parseSmartschoolRecipients(detail.ccReceivers);
-
-      to.addAll(
-        toNames
-            .map(_smartschoolChipFromName)
-            .whereType<RecipientChip>()
-            .where((chip) => chip.dedupeKey != senderChip?.dedupeKey),
-      );
-      cc.addAll(
-        ccNames
-            .map(_smartschoolChipFromName)
-            .whereType<RecipientChip>()
-            .where((chip) => chip.dedupeKey != senderChip?.dedupeKey),
-      );
+      if (detail.replyAllToRecipients.isNotEmpty ||
+          detail.replyAllCcRecipients.isNotEmpty) {
+        to.addAll(
+          detail.replyAllToRecipients
+              .map(_smartschoolChipFromRecipient)
+              .whereType<RecipientChip>(),
+        );
+        cc.addAll(
+          detail.replyAllCcRecipients
+              .map(_smartschoolChipFromRecipient)
+              .whereType<RecipientChip>(),
+        );
+      } else {
+        to.addAll(
+          detail.receivers
+              .map((recipient) => recipient.displayName)
+              .map(_smartschoolChipFromName)
+              .whereType<RecipientChip>()
+              .where((chip) => chip.dedupeKey != senderChip?.dedupeKey),
+        );
+        cc.addAll(
+          detail.ccReceivers
+              .map((recipient) => recipient.displayName)
+              .map(_smartschoolChipFromName)
+              .whereType<RecipientChip>()
+              .where((chip) => chip.dedupeKey != senderChip?.dedupeKey),
+        );
+      }
     }
 
     final attachmentNames = action == ComposerPrefillAction.forward
@@ -188,14 +205,22 @@ class ComposerPrefillService {
     await ref.read(office365MailServiceProvider).refreshMessageDetail(local.id);
 
     final resolved = await db.messagesDao.getMessageById(local.id) ?? local;
-    final participants = await db.messagesDao.getParticipants(resolved.id);
+    final participants = await db.messagesDao.getParticipantsWithIdentity(
+      resolved.id,
+    );
     final attachments = await db.attachmentsDao.getAttachmentsForMessage(
       resolved.id,
     );
 
     final sender = participants.where((p) => p.role == 'sender').firstOrNull;
-    final senderName = (sender?.displayNameSnapshot ?? header.from).trim();
-    final senderAddress = sender?.addressSnapshot;
+    final senderName = (sender != null && sender.displayName.isNotEmpty
+            ? sender.displayName
+            : header.from)
+        .trim();
+    final senderAddress =
+        (sender != null && sender.externalId.contains('@'))
+            ? sender.externalId
+            : null;
 
     final senderChip = _emailChip(name: senderName, email: senderAddress);
 
@@ -235,10 +260,9 @@ class ComposerPrefillService {
               .toList()
         : const <String>[];
 
-    final originalHtml = resolved.bodyRaw ?? '';
-    final plainBody = (resolved.bodyText?.trim().isNotEmpty ?? false)
-        ? resolved.bodyText!.trim()
-        : _toPlainText(originalHtml);
+    // Body is no longer stored in DB (fetched on demand by cache controller).
+    const originalHtml = '';
+    const plainBody = '';
 
     return DraftMessage(
       toRecipients: _dedupe(to),
@@ -259,14 +283,16 @@ class ComposerPrefillService {
   }
 
   List<RecipientChip> _chipsForRole(
-    List<MessageParticipant> participants,
+    List<ParticipantIdentity> participants,
     String role,
   ) {
     return participants
         .where((p) => p.role == role)
         .map(
-          (p) =>
-              _emailChip(name: p.displayNameSnapshot, email: p.addressSnapshot),
+          (p) => _emailChip(
+            name: p.displayName,
+            email: p.externalId.contains('@') ? p.externalId : null,
+          ),
         )
         .whereType<RecipientChip>()
         .toList(growable: false);
@@ -287,6 +313,60 @@ class ComposerPrefillService {
     );
   }
 
+  RecipientChip? _smartschoolChipFromRecipient(
+    SmartschoolMessageRecipient recipient,
+  ) {
+    final name = recipient.displayName.trim();
+    if (name.isEmpty) return null;
+
+    return RecipientChip(
+      displayName: name,
+      endpoint: RecipientEndpoint(
+        kind: RecipientEndpointKind.smartschool,
+        value: recipient.userId?.toString() ?? name,
+        label: RecipientEndpointLabel.smartschool,
+        externalId: recipient.ssId?.toString(),
+      ),
+      source: RecipientChipSource.smartschoolRemote,
+      sourceIdentityKey: recipient.userId != null
+          ? 'user:${recipient.userId}'
+          : null,
+    );
+  }
+
+  RecipientChip? _smartschoolChipForSender(
+    SmartschoolMessageDetail detail,
+    String senderName,
+  ) {
+    final normalizedSender = senderName.trim().toLowerCase();
+    if (normalizedSender.isNotEmpty) {
+      for (final recipient in detail.replyAllToRecipients) {
+        if (recipient.displayName.trim().toLowerCase() == normalizedSender) {
+          return _smartschoolChipFromRecipient(recipient);
+        }
+      }
+    }
+    return _smartschoolChipFromName(senderName);
+  }
+
+  SmartschoolBoxType _smartschoolBoxTypeForHeader(
+    SmartschoolMessageHeader header,
+  ) {
+    switch (header.realBox.trim().toLowerCase()) {
+      case 'draft':
+        return SmartschoolBoxType.draft;
+      case 'scheduled':
+        return SmartschoolBoxType.scheduled;
+      case 'sent':
+        return SmartschoolBoxType.sent;
+      case 'trash':
+        return SmartschoolBoxType.trash;
+      case 'inbox':
+      default:
+        return SmartschoolBoxType.inbox;
+    }
+  }
+
   RecipientChip? _emailChip({required String name, String? email}) {
     final normalizedEmail = (email ?? '').trim().toLowerCase();
     if (normalizedEmail.isEmpty) {
@@ -305,49 +385,6 @@ class ComposerPrefillService {
       ),
       source: RecipientChipSource.office365Remote,
     );
-  }
-
-  List<String> _parseSmartschoolRecipients(dynamic raw) {
-    if (raw == null) return const [];
-
-    if (raw is String) {
-      final text = raw.trim();
-      if (text.isEmpty) return const [];
-      return text
-          .split(RegExp(r'[,;]'))
-          .map((name) => name.trim())
-          .where((name) => name.isNotEmpty)
-          .toList(growable: false);
-    }
-
-    if (raw is List) {
-      final names = <String>[];
-      for (final item in raw) {
-        if (item is String) {
-          final parsed = item.trim();
-          if (parsed.isNotEmpty) {
-            names.add(parsed);
-          }
-          continue;
-        }
-
-        if (item is Map) {
-          final candidate =
-              (item['name'] ??
-                      item['display_name'] ??
-                      item['displayName'] ??
-                      '')
-                  .toString()
-                  .trim();
-          if (candidate.isNotEmpty) {
-            names.add(candidate);
-          }
-        }
-      }
-      return names;
-    }
-
-    return const [];
   }
 
   Future<List<String>> _smartschoolAttachmentNames(int messageId) async {

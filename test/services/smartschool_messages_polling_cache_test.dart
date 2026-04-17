@@ -16,15 +16,21 @@ import 'package:do_thing/controllers/status_controller.dart';
 class _FakeBridge implements SmartschoolBridge {
   _FakeBridge(this._onGetMessage);
 
-  final Future<List<SmartschoolMessageDetail>> Function(int messageId)
+  final Future<List<SmartschoolMessageDetail>> Function(
+    int messageId,
+    SmartschoolBoxType boxType,
+  )
   _onGetMessage;
 
   int getMessageCalls = 0;
 
   @override
-  Future<List<SmartschoolMessageDetail>> getMessage(int messageId) {
+  Future<List<SmartschoolMessageDetail>> getMessage(
+    int messageId, {
+    SmartschoolBoxType boxType = SmartschoolBoxType.inbox,
+  }) {
     getMessageCalls++;
-    return _onGetMessage(messageId);
+    return _onGetMessage(messageId, boxType);
   }
 
   @override
@@ -48,10 +54,18 @@ class _QueueMessagesController extends SmartschoolMessagesController {
     SmartschoolBoxType boxType = SmartschoolBoxType.inbox,
     List<int> alreadySeenIds = const [],
   }) async {
-    if (_batches.isEmpty) {
-      return const [];
-    }
+    if (_batches.isEmpty) return const [];
     return _batches.removeFirst();
+  }
+
+  @override
+  Future<List<SmartschoolMessageDetail>> getMessage(
+    int messageId, {
+    SmartschoolBoxType boxType = SmartschoolBoxType.inbox,
+    bool reportStatus = true,
+  }) async {
+    // Return empty so the polling controller's eager sync is a no-op in tests.
+    return const [];
   }
 
   @override
@@ -113,13 +127,13 @@ SmartschoolMessageHeader _header({required int id, required bool unread}) {
 
 void main() {
   group('SmartschoolMessageCacheController', () {
-    test('getOrFetch caches and avoids duplicate bridge calls', () async {
+    test('getOrFetch fetches from bridge and caches in memory', () async {
       final db = AppDatabase(NativeDatabase.memory());
       addTearDown(db.close);
       final repo = SmartschoolSyncRepository(db);
       await repo.syncHeaders([_header(id: 900, unread: true)]);
 
-      final bridge = _FakeBridge((_) async {
+      final bridge = _FakeBridge((_, a) async {
         return const [
           SmartschoolMessageDetail(
             id: 900,
@@ -149,77 +163,72 @@ void main() {
 
       expect(first.id, 900);
       expect(second.id, 900);
+      // Bridge called only once; second result came from in-memory cache.
       expect(bridge.getMessageCalls, 1);
       expect(
         container.read(smartschoolMessageCacheProvider).containsKey(900),
         isTrue,
       );
-
-      final stored = await db.messagesDao.findMessage(
-        source: 'smartschool',
-        externalId: '900',
-      );
-      expect(stored, isNotNull);
-      expect(stored!.bodyText, 'Hello');
     });
 
-    test('getOrFetch throws when bridge returns empty detail', () async {
-      final bridge = _FakeBridge((_) async => const []);
+    test('getOrFetch throws when bridge returns empty list', () async {
+      final bridge = _FakeBridge((_, _) async => const []);
       final container = ProviderContainer();
       addTearDown(container.dispose);
 
-      final notifier = container.read(smartschoolMessageCacheProvider.notifier);
-
       await expectLater(
-        () => notifier.getOrFetch(1, bridge),
+        () => container
+            .read(smartschoolMessageCacheProvider.notifier)
+            .getOrFetch(1, bridge),
         throwsA(isA<StateError>()),
       );
     });
 
-    test(
-      'getOrFetch uses persisted full detail before refetching remote',
-      () async {
-        final db = AppDatabase(NativeDatabase.memory());
-        addTearDown(db.close);
-        final repo = SmartschoolSyncRepository(db);
-        await repo.syncHeaders([_header(id: 901, unread: true)]);
-        await repo.syncDetail(
-          const SmartschoolMessageDetail(
+    test('getOrFetch always calls bridge (no DB body cache)', () async {
+      final db = AppDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+      final repo = SmartschoolSyncRepository(db);
+      await repo.syncHeaders([_header(id: 901, unread: true)]);
+
+      // Simulate a prior syncDetail (identity links, no body stored).
+      await repo.syncDetail(
+        const SmartschoolMessageDetail(
+          id: 901,
+          from: 'Teacher',
+          subject: 'Stored',
+          body: '<p>Stored body</p>',
+          date: '2026-04-10T12:00:00Z',
+          replyAllToRecipients: [
+            SmartschoolMessageRecipient(displayName: 'Teacher', userId: 1),
+          ],
+        ),
+      );
+
+      final bridge = _FakeBridge((_, a) async {
+        return const [
+          SmartschoolMessageDetail(
             id: 901,
             from: 'Teacher',
-            subject: 'Stored',
-            body: '<p>Stored body</p>',
+            subject: 'Remote',
+            body: '<p>Remote body</p>',
             date: '2026-04-10T12:00:00Z',
           ),
-        );
+        ];
+      });
 
-        final bridge = _FakeBridge((_) async {
-          return const [
-            SmartschoolMessageDetail(
-              id: 901,
-              from: 'Teacher',
-              subject: 'Remote',
-              body: '<p>Remote body</p>',
-              date: '2026-04-10T12:00:00Z',
-            ),
-          ];
-        });
+      final container = ProviderContainer(
+        overrides: [appDatabaseProvider.overrideWithValue(db)],
+      );
+      addTearDown(container.dispose);
 
-        final container = ProviderContainer(
-          overrides: [appDatabaseProvider.overrideWithValue(db)],
-        );
-        addTearDown(container.dispose);
+      final detail = await container
+          .read(smartschoolMessageCacheProvider.notifier)
+          .getOrFetch(901, bridge);
 
-        final notifier = container.read(
-          smartschoolMessageCacheProvider.notifier,
-        );
-        final detail = await notifier.getOrFetch(901, bridge);
-
-        expect(detail.subject, 'Stored');
-        expect(detail.body, '<p>Stored body</p>');
-        expect(bridge.getMessageCalls, 0);
-      },
-    );
+      // Body always comes from bridge; DB body storage was removed.
+      expect(detail.subject, 'Remote');
+      expect(bridge.getMessageCalls, 1);
+    });
   });
 
   group('SmartschoolPollingController', () {
@@ -302,7 +311,7 @@ void main() {
       expect(fakeNotifications.shown, hasLength(1));
     });
 
-    test('stopPolling stops event-driven detection subscription', () async {
+    test('stopPolling stops event-driven detection', () async {
       final db = AppDatabase(NativeDatabase.memory());
       addTearDown(db.close);
 

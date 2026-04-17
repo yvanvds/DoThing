@@ -13,6 +13,7 @@ import '../../controllers/status_controller.dart';
 import '../../models/office365_settings.dart';
 import '../../providers/database_provider.dart';
 import '../downloads_file_store.dart';
+import 'outlook_message_body_cache_controller.dart';
 import 'outlook_models.dart';
 
 const _kOffice365Source = 'outlook';
@@ -563,6 +564,15 @@ class Office365MailService {
     final resolvedBodyRaw = _replaceInlineCidUrls(bodyRaw, attachmentPayloads);
     final bodyText = _toPlainText(resolvedBodyRaw, bodyFormat: bodyFormat);
 
+    ref.read(outlookMessageBodyCacheProvider.notifier).put(
+      local.id,
+      OutlookBodyContent(
+        preview: '',
+        raw: resolvedBodyRaw.isEmpty ? null : resolvedBodyRaw,
+        format: bodyFormat,
+      ),
+    );
+
     final receivedAt =
         DateTime.tryParse(payload['receivedDateTime'] as String? ?? '') ??
         local.receivedAt;
@@ -582,14 +592,6 @@ class Office365MailService {
       ),
     );
 
-    await db.messagesDao.updateMessageDetail(
-      id: local.id,
-      bodyRaw: resolvedBodyRaw,
-      bodyText: bodyText,
-      bodyFormat: bodyFormat,
-      rawDetailJson: jsonEncode(payload),
-    );
-
     final attachmentRows = _buildAttachmentRows(
       messageId: local.id,
       attachments: attachmentPayloads,
@@ -607,40 +609,33 @@ class Office365MailService {
         .trim()
         .toLowerCase();
 
-    int? senderContactId;
+    final participants = <MessageParticipantsCompanion>[];
+    final participantNames = <String>[];
+
     if (senderAddress.isNotEmpty) {
-      senderContactId = await db.contactsDao.upsertIdentity(
+      final identityId = await db.contactsDao.upsertIdentity(
         source: _kOffice365Source,
         externalId: senderAddress,
         displayName: senderName,
       );
+      participants.add(
+        MessageParticipantsCompanion.insert(
+          messageId: local.id,
+          contactIdentityId: identityId,
+          role: 'sender',
+        ),
+      );
+      participantNames.add(senderName);
     }
 
-    final participants = <MessageParticipantsCompanion>[
-      MessageParticipantsCompanion.insert(
-        messageId: local.id,
-        role: 'sender',
-        position: const Value(0),
-        displayNameSnapshot: senderName,
-        contactId: Value(senderContactId),
-        addressSnapshot: Value(senderAddress.isEmpty ? null : senderAddress),
-      ),
-    ];
-
     Future<void> appendRecipients(dynamic raw, String role) async {
-      if (raw is! List) {
-        return;
-      }
+      if (raw is! List) return;
 
-      for (final (index, recipient) in raw.indexed) {
-        if (recipient is! Map<String, dynamic>) {
-          continue;
-        }
+      for (final recipient in raw) {
+        if (recipient is! Map<String, dynamic>) continue;
 
         final emailAddress = recipient['emailAddress'];
-        if (emailAddress is! Map<String, dynamic>) {
-          continue;
-        }
+        if (emailAddress is! Map<String, dynamic>) continue;
 
         final displayName =
             (emailAddress['name'] as String? ?? '').trim().isNotEmpty
@@ -649,26 +644,21 @@ class Office365MailService {
         final address = ((emailAddress['address'] as String?) ?? '')
             .trim()
             .toLowerCase();
-        if (displayName.isEmpty || address.isEmpty) {
-          continue;
-        }
+        if (displayName.isEmpty || address.isEmpty) continue;
 
-        final contactId = await db.contactsDao.upsertIdentity(
+        final identityId = await db.contactsDao.upsertIdentity(
           source: _kOffice365Source,
           externalId: address,
           displayName: displayName,
         );
-
         participants.add(
           MessageParticipantsCompanion.insert(
             messageId: local.id,
+            contactIdentityId: identityId,
             role: role,
-            position: Value(index),
-            displayNameSnapshot: displayName,
-            contactId: Value(contactId),
-            addressSnapshot: Value(address),
           ),
         );
+        participantNames.add(displayName);
       }
     }
 
@@ -677,6 +667,17 @@ class Office365MailService {
     await appendRecipients(payload['bccRecipients'], 'bcc');
 
     await db.messagesDao.replaceParticipants(local.id, participants);
+
+    await db.searchDao.upsertFtsRow(
+      messageId: local.id,
+      subject: subject,
+      bodyText: bodyText.isEmpty ? null : bodyText,
+      participantNames: participantNames.join(' '),
+      attachmentNames: attachmentPayloads
+          .map((a) => (a['name'] as String?) ?? '')
+          .where((n) => n.isNotEmpty)
+          .join(' '),
+    );
 
     ref
         .read(statusProvider.notifier)
@@ -796,13 +797,11 @@ class Office365MailService {
     );
 
     final fullBody = latest.body.raw?.trim() ?? '';
-    final hasFullBody = fullBody.isNotEmpty;
-    final effectiveBodyRaw = hasFullBody ? fullBody : latest.body.preview;
-    final effectiveBodyFormat = hasFullBody
+    final effectiveBodyFormat = fullBody.isNotEmpty
         ? (latest.body.format ?? 'html')
         : 'plain';
     final effectiveBodyText = _toPlainText(
-      effectiveBodyRaw,
+      fullBody.isNotEmpty ? fullBody : latest.body.preview,
       bodyFormat: effectiveBodyFormat,
     );
 
@@ -811,15 +810,9 @@ class Office365MailService {
       externalId: latest.id,
       mailbox: 'inbox',
       subject: Value(latest.subject),
-      bodyRaw: Value(effectiveBodyRaw),
-      bodyText: Value(effectiveBodyText),
-      bodyFormat: Value(effectiveBodyFormat),
       receivedAt: latest.receivedAt,
       isRead: Value(latest.isRead),
       hasAttachments: Value(latest.hasAttachments),
-      detailFetchedAt: hasFullBody
-          ? Value(DateTime.now())
-          : const Value.absent(),
       updatedAt: Value(DateTime.now()),
     );
 
@@ -833,40 +826,43 @@ class Office365MailService {
         MessagesCompanion(
           mailbox: const Value('inbox'),
           subject: Value(latest.subject),
-          bodyRaw: Value(effectiveBodyRaw),
-          bodyText: Value(effectiveBodyText),
-          bodyFormat: Value(effectiveBodyFormat),
           receivedAt: Value(latest.receivedAt),
           isRead: Value(latest.isRead),
           hasAttachments: Value(latest.hasAttachments),
-          detailFetchedAt: hasFullBody
-              ? Value(DateTime.now())
-              : const Value.absent(),
           updatedAt: Value(DateTime.now()),
         ),
       );
       return existing.id;
     });
 
-    int? senderContactId;
     final senderAddress = latest.sender.address.trim().toLowerCase();
+    final participants = <MessageParticipantsCompanion>[];
+    final participantNames = <String>[];
+
     if (senderAddress.isNotEmpty) {
-      senderContactId = await db.contactsDao.upsertIdentity(
+      final identityId = await db.contactsDao.upsertIdentity(
         source: _kOffice365Source,
         externalId: senderAddress,
         displayName: latest.sender.name,
       );
+      participants.add(
+        MessageParticipantsCompanion.insert(
+          messageId: messageId,
+          contactIdentityId: identityId,
+          role: 'sender',
+        ),
+      );
+      participantNames.add(latest.sender.name);
     }
 
-    await db.messagesDao.replaceParticipants(messageId, [
-      MessageParticipantsCompanion.insert(
-        messageId: messageId,
-        role: 'sender',
-        displayNameSnapshot: latest.sender.name,
-        contactId: Value(senderContactId),
-        addressSnapshot: Value(senderAddress.isEmpty ? null : senderAddress),
-      ),
-    ]);
+    await db.messagesDao.replaceParticipants(messageId, participants);
+
+    await db.searchDao.upsertFtsRow(
+      messageId: messageId,
+      subject: latest.subject,
+      bodyText: effectiveBodyText.isEmpty ? null : effectiveBodyText,
+      participantNames: participantNames.join(' '),
+    );
   }
 
   Future<void> _markMessageDeletedByExternalId(String externalId) async {

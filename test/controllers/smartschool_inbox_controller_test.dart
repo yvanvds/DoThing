@@ -33,10 +33,11 @@ class _FakeAuthController extends SmartschoolAuthController {
 }
 
 class _FakeMessagesController extends SmartschoolMessagesController {
-  _FakeMessagesController({required this.onGetHeaders});
+  _FakeMessagesController({required this.onGetHeaders, this.onGetMessage});
 
   final Future<List<SmartschoolMessageHeader>> Function(SmartschoolBoxType)
   onGetHeaders;
+  final Future<List<SmartschoolMessageDetail>> Function(int)? onGetMessage;
 
   @override
   void build() {}
@@ -55,6 +56,15 @@ class _FakeMessagesController extends SmartschoolMessagesController {
     List<int> alreadySeenIds = const [],
   }) {
     return Future.value(const []);
+  }
+
+  @override
+  Future<List<SmartschoolMessageDetail>> getMessage(
+    int messageId, {
+    SmartschoolBoxType boxType = SmartschoolBoxType.inbox,
+    bool reportStatus = true,
+  }) {
+    return onGetMessage?.call(messageId) ?? Future.value(const []);
   }
 }
 
@@ -205,6 +215,28 @@ void main() {
               () => _FakeMessagesController(
                 onGetHeaders: (box) async =>
                     box == SmartschoolBoxType.inbox ? headers : const [],
+                onGetMessage: (id) async {
+                  final header = headers.firstWhere(
+                    (h) => h.id == id,
+                    orElse: () => headers.first,
+                  );
+                  final userId = header.from == 'Alice' ? 1 : 2;
+                  return [
+                    SmartschoolMessageDetail(
+                      id: id,
+                      from: header.from,
+                      subject: header.subject,
+                      body: '<p>Test</p>',
+                      date: header.date,
+                      replyAllToRecipients: [
+                        SmartschoolMessageRecipient(
+                          displayName: header.from,
+                          userId: userId,
+                        ),
+                      ],
+                    ),
+                  ];
+                },
               ),
             ),
           ],

@@ -41,7 +41,10 @@ class _FakeBridge implements SmartschoolBridge {
   }
 
   @override
-  Future<List<SmartschoolMessageDetail>> getMessage(int messageId) async {
+  Future<List<SmartschoolMessageDetail>> getMessage(
+    int messageId, {
+    SmartschoolBoxType boxType = SmartschoolBoxType.inbox,
+  }) async {
     return const [
       SmartschoolMessageDetail(
         id: 1,

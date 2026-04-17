@@ -44,14 +44,14 @@ class LocalRecipientCandidateProvider implements RecipientCandidateProvider {
         c.display_name AS contact_display_name,
         ci.source AS identity_source,
         ci.external_id AS identity_external_id,
-        ci.display_name_snapshot AS identity_display_name
+        ci.display_name AS identity_display_name
       FROM contacts c
       LEFT JOIN contact_identities ci ON ci.contact_id = c.id
       WHERE
         LOWER(c.display_name) LIKE ? OR
-        LOWER(COALESCE(ci.display_name_snapshot, '')) LIKE ? OR
+        LOWER(COALESCE(ci.display_name, '')) LIKE ? OR
         LOWER(COALESCE(ci.external_id, '')) LIKE ?
-      ORDER BY c.updated_at DESC
+      ORDER BY COALESCE(ci.last_seen_at, c.created_at) DESC
       LIMIT ?
       ''',
           variables: [
@@ -105,25 +105,25 @@ class LocalRecipientCandidateProvider implements RecipientCandidateProvider {
     required int limit,
   }) async {
     final pattern = '%${query.toLowerCase()}%';
+    // Look for recently-seen email identities not already covered by contacts.
     final rows = await _db
         .customSelect(
           '''
       SELECT
-        LOWER(TRIM(mp.address_snapshot)) AS address,
-        MAX(COALESCE(mp.display_name_snapshot, mp.address_snapshot)) AS display_name,
-        MAX(COALESCE(m.received_at, m.sent_at)) AS latest_seen_at
-      FROM message_participants mp
-      INNER JOIN messages m ON m.id = mp.message_id
+        LOWER(TRIM(ci.external_id)) AS address,
+        COALESCE(ci.display_name, ci.external_id) AS display_name,
+        ci.last_seen_at AS latest_seen_at
+      FROM contact_identities ci
       WHERE
-        mp.address_snapshot IS NOT NULL AND
-        TRIM(mp.address_snapshot) <> '' AND
-        LOWER(mp.address_snapshot) LIKE ?
-      GROUP BY LOWER(TRIM(mp.address_snapshot))
+        ci.external_id LIKE '%@%' AND
+        ci.source IN ('outlook', 'office365', 'gmail') AND
+        LOWER(ci.external_id) LIKE ?
+      GROUP BY LOWER(TRIM(ci.external_id))
       ORDER BY latest_seen_at DESC
       LIMIT ?
       ''',
           variables: [Variable<String>(pattern), Variable<int>(limit)],
-          readsFrom: {_db.messageParticipants, _db.messages},
+          readsFrom: {_db.contactIdentities},
         )
         .get();
 

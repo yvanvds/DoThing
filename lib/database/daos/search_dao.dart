@@ -8,7 +8,6 @@ part 'search_dao.g.dart';
 class MessageSearchResult {
   final int messageId;
   final String subject;
-  final String? bodyText;
   final DateTime receivedAt;
   final bool isRead;
   final double? rank;
@@ -16,7 +15,6 @@ class MessageSearchResult {
   const MessageSearchResult({
     required this.messageId,
     required this.subject,
-    this.bodyText,
     required this.receivedAt,
     required this.isRead,
     this.rank,
@@ -83,7 +81,6 @@ class SearchDao extends DatabaseAccessor<AppDatabase> with _$SearchDaoMixin {
       SELECT
         m.id          AS message_id,
         m.subject     AS subject,
-        m.body_text   AS body_text,
         m.received_at AS received_at,
         m.is_read     AS is_read,
         bm25(message_fts) AS rank
@@ -103,7 +100,6 @@ class SearchDao extends DatabaseAccessor<AppDatabase> with _$SearchDaoMixin {
       return MessageSearchResult(
         messageId: row.read<int>('message_id'),
         subject: row.read<String>('subject'),
-        bodyText: row.readNullable<String>('body_text'),
         receivedAt: DateTime.fromMillisecondsSinceEpoch(
           row.read<int>('received_at') * 1000,
         ),

@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs grep *)",
+      "Bash(dart run *)",
+      "Bash(flutter test *)",
+      "Bash(dart analyze *)"
+    ]
+  }
+}

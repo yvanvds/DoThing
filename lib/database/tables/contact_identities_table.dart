@@ -4,36 +4,30 @@ import 'contacts_table.dart';
 
 /// Source-specific identity attached to a [Contacts] row.
 ///
-/// A single contact can be known under multiple identities across providers
-/// (e.g. the same person has a Smartschool ID, a Gmail address, etc.).
+/// One contact can be known under multiple identities across providers.
 ///
-/// This table is the deduplication key during ingest: incoming messages are
-/// resolved to a contact by (source, externalId).
+/// [externalId] must always be a stable provider-assigned ID:
+///   - Smartschool: 'user:{userId}' or 'ss:{ssId}' — never a display name.
+///   - Outlook: email address or provider object ID.
 class ContactIdentities extends Table {
   IntColumn get id => integer().autoIncrement()();
 
   IntColumn get contactId =>
       integer().references(Contacts, #id, onDelete: KeyAction.cascade)();
 
-  /// Provider name, e.g. 'smartschool', 'gmail', 'outlook'.
+  /// Provider name, e.g. 'smartschool', 'outlook'.
   TextColumn get source => text()();
 
-  /// ID of the user as supplied by the remote provider.
+  /// Stable provider-assigned ID (never a display-name derived key).
   TextColumn get externalId => text()();
 
-  /// Display name at the time this identity was last seen.
-  TextColumn get displayNameSnapshot => text().nullable()();
+  /// Display name as last seen for this identity.
+  TextColumn get displayName => text().nullable()();
 
-  /// Avatar URL at the time this identity was last seen.
-  TextColumn get avatarUrlSnapshot => text().nullable()();
-
-  /// Full raw payload as JSON, for future re-processing.
-  TextColumn get rawPayloadJson => text().nullable()();
+  /// Avatar URL as last seen for this identity.
+  TextColumn get avatarUrl => text().nullable()();
 
   DateTimeColumn get lastSeenAt => dateTime()();
-  DateTimeColumn get lastEnrichedAt => dateTime().nullable()();
-
-  DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
   DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
 
   @override

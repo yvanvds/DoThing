@@ -60,23 +60,6 @@ class SmartschoolMessageDetailView extends ConsumerWidget {
           );
       return _MessageDetailPayload(detail: detail, attachments: attachments);
     } catch (error, stackTrace) {
-      final fallback = await _tryBuildFallbackPayload(ref, error);
-      if (fallback != null) {
-        ref
-            .read(statusProvider.notifier)
-            .add(
-              StatusEntryType.warning,
-              'Loaded fallback detail from local cache for message ${header.id}.',
-            );
-        await _dumpDetailLoadDiagnostics(
-          ref,
-          authNotifier,
-          error: error,
-          stackTrace: stackTrace,
-        );
-        return fallback;
-      }
-
       await _dumpDetailLoadDiagnostics(
         ref,
         authNotifier,
@@ -87,90 +70,7 @@ class SmartschoolMessageDetailView extends ConsumerWidget {
     }
   }
 
-  Future<bool> _hasPersistedLocalDetail(WidgetRef ref) async {
-    final db = ref.read(appDatabaseProvider);
-    final local = await db.messagesDao.findMessage(
-      source: 'smartschool',
-      externalId: header.id.toString(),
-    );
-    if (local == null || local.detailFetchedAt == null) {
-      return false;
-    }
-
-    final raw = local.bodyRaw?.trim() ?? '';
-    final text = local.bodyText?.trim() ?? '';
-    return raw.isNotEmpty || text.isNotEmpty;
-  }
-
-  Future<_MessageDetailPayload?> _tryBuildFallbackPayload(
-    WidgetRef ref,
-    Object error,
-  ) async {
-    if (!_isBridgeDetailPayloadError(error)) return null;
-
-    final db = ref.read(appDatabaseProvider);
-    final local = await db.messagesDao.findMessage(
-      source: 'smartschool',
-      externalId: header.id.toString(),
-    );
-    if (local == null) return null;
-
-    Map<String, dynamic>? rawDetail;
-    if (local.rawDetailJson != null && local.rawDetailJson!.trim().isNotEmpty) {
-      try {
-        final decoded = jsonDecode(local.rawDetailJson!);
-        if (decoded is Map<String, dynamic>) {
-          rawDetail = decoded;
-        }
-      } catch (_) {}
-    }
-
-    final fallbackDetail = SmartschoolMessageDetail(
-      id: header.id,
-      from: (rawDetail?['from'] as String?) ?? header.from,
-      subject: (rawDetail?['subject'] as String?) ?? header.subject,
-      body:
-          local.bodyRaw ??
-          local.bodyText ??
-          '<p><em>Message body could not be loaded because the source payload is invalid.</em></p>',
-      date: (rawDetail?['date'] as String?) ?? header.date,
-      to: rawDetail?['to'] as String?,
-      status: (rawDetail?['status'] as int?) ?? (local.isRead ? 1 : 0),
-      attachment:
-          (rawDetail?['attachment'] as int?) ?? (local.hasAttachments ? 1 : 0),
-      unread: (rawDetail?['unread'] as bool?) ?? !local.isRead,
-      label: rawDetail?['label'] as bool?,
-      receivers: rawDetail?['receivers'],
-      ccReceivers: rawDetail?['ccreceivers'],
-      bccReceivers: rawDetail?['bccreceivers'],
-      senderPicture:
-          (rawDetail?['sender_picture'] as String?) ??
-          (header.fromImage.isNotEmpty ? header.fromImage : null),
-      fromTeam: rawDetail?['from_team'] as int?,
-      totalNrOtherToReceivers:
-          rawDetail?['total_nr_other_to_reciviers'] as int?,
-      totalNrOtherCcReceivers:
-          rawDetail?['total_nr_other_cc_receivers'] as int?,
-      totalNrOtherBccReceivers:
-          rawDetail?['total_nr_other_bcc_receivers'] as int?,
-      canReply: rawDetail?['can_reply'] as bool?,
-      hasReply: rawDetail?['has_reply'] as bool?,
-      hasForward: rawDetail?['has_forward'] as bool?,
-      sendDate: rawDetail?['send_date'] as String?,
-    );
-
-    List<SmartschoolAttachment> attachments = const [];
-    try {
-      attachments = await ref
-          .read(smartschoolMessagesProvider.notifier)
-          .listAttachments(header.id);
-    } catch (_) {}
-
-    return _MessageDetailPayload(
-      detail: fallbackDetail,
-      attachments: attachments,
-    );
-  }
+  Future<bool> _hasPersistedLocalDetail(WidgetRef ref) async => false;
 
   Future<void> _dumpDetailLoadDiagnostics(
     WidgetRef ref,
@@ -217,10 +117,7 @@ class SmartschoolMessageDetailView extends ConsumerWidget {
       buffer
         ..writeln('localId: ${local.id}')
         ..writeln('mailbox: ${local.mailbox}')
-        ..writeln('sentAt: ${local.sentAt}')
-        ..writeln('receivedAt: ${local.receivedAt}')
-        ..writeln('rawHeaderJson: ${local.rawHeaderJson ?? '<null>'}')
-        ..writeln('rawDetailJson: ${local.rawDetailJson ?? '<null>'}');
+        ..writeln('receivedAt: ${local.receivedAt}');
     }
 
     buffer
@@ -261,13 +158,10 @@ class SmartschoolMessageDetailView extends ConsumerWidget {
     );
 
     final participants = local != null
-        ? await db.messagesDao.getParticipants(local.id)
-        : <MessageParticipant>[];
+        ? await db.messagesDao.getParticipantsWithIdentity(local.id)
+        : <ParticipantIdentity>[];
 
-    final contactIds = participants
-        .map((p) => p.contactId)
-        .whereType<int>()
-        .toSet();
+    final contactIds = participants.map((p) => p.contactId).toSet();
 
     final contacts = <int, Contact>{};
     final identitiesByContact = <int, List<ContactIdentity>>{};
@@ -336,11 +230,7 @@ class SmartschoolMessageDetailView extends ConsumerWidget {
             'isArchived': local.isArchived,
             'isDeleted': local.isDeleted,
             'hasAttachments': local.hasAttachments,
-            'sentAt': local.sentAt?.toIso8601String(),
             'receivedAt': local.receivedAt.toIso8601String(),
-            'detailFetchedAt': local.detailFetchedAt?.toIso8601String(),
-            'rawHeaderJson': local.rawHeaderJson,
-            'rawDetailJson': local.rawDetailJson,
           }),
         );
     } else {
@@ -351,14 +241,11 @@ class SmartschoolMessageDetailView extends ConsumerWidget {
     for (final p in participants) {
       buf.writeln(
         jsonEncode({
-          'id': p.id,
-          'messageId': p.messageId,
-          'contactId': p.contactId,
-          'contactIdentityId': p.contactIdentityId,
           'role': p.role,
-          'position': p.position,
-          'displayNameSnapshot': p.displayNameSnapshot,
-          'addressSnapshot': p.addressSnapshot,
+          'contactId': p.contactId,
+          'displayName': p.displayName,
+          'externalId': p.externalId,
+          'source': p.source,
         }),
       );
     }
@@ -374,11 +261,7 @@ class SmartschoolMessageDetailView extends ConsumerWidget {
                 ? {
                     'id': contact.id,
                     'displayName': contact.displayName,
-                    'primaryAvatarUrl': contact.primaryAvatarUrl,
-                    'kind': contact.kind,
-                    'isStub': contact.isStub,
                     'createdAt': contact.createdAt.toIso8601String(),
-                    'updatedAt': contact.updatedAt.toIso8601String(),
                   }
                 : {'error': 'contact not found'},
           ),
@@ -392,10 +275,9 @@ class SmartschoolMessageDetailView extends ConsumerWidget {
               'id': identity.id,
               'source': identity.source,
               'externalId': identity.externalId,
-              'displayNameSnapshot': identity.displayNameSnapshot,
-              'avatarUrlSnapshot': identity.avatarUrlSnapshot,
+              'displayName': identity.displayName,
+              'avatarUrl': identity.avatarUrl,
               'lastSeenAt': identity.lastSeenAt.toIso8601String(),
-              'rawPayloadJson': identity.rawPayloadJson,
             }),
           );
       }
@@ -1027,20 +909,12 @@ class SmartschoolMessageDetailView extends ConsumerWidget {
 
   /// Convert a dynamic receiver value (List or String) to a comma-separated
   /// string, or null if empty.
-  String? _formatRecipients(dynamic value) {
-    if (value == null) return null;
-    if (value is List) {
-      final items = value
-          .whereType<String>()
-          .where((s) => s.isNotEmpty)
-          .toList();
-      return items.isEmpty ? null : items.join(', ');
-    }
-    if (value is String) {
-      final cleaned = value.trim().replaceAll(RegExp(r'^\[|\]$'), '').trim();
-      return cleaned.isEmpty ? null : cleaned;
-    }
-    return null;
+  String? _formatRecipients(List<SmartschoolMessageRecipient> recipients) {
+    final names = recipients
+        .map((recipient) => recipient.displayName.trim())
+        .where((name) => name.isNotEmpty)
+        .toList(growable: false);
+    return names.isEmpty ? null : names.join(', ');
   }
 
   static String _fixRelativeImageUrls(String html) {

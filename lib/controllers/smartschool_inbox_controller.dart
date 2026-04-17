@@ -252,9 +252,10 @@ class SmartschoolInboxController extends AsyncNotifier<int> {
     await _bootstrapSentHeadersOnce();
 
     // Persist headers and remove stale local rows.
+    final syncRepo = ref.read(smartschoolSyncRepositoryProvider);
+    List<SmartschoolMessageHeader> newlyInserted = const [];
     try {
-      final syncRepo = ref.read(smartschoolSyncRepositoryProvider);
-      final persisted = await syncRepo.syncHeaders(headers);
+      newlyInserted = await syncRepo.syncHeaders(headers);
       final activeIds = headers.map((h) => h.id.toString()).toSet();
       final removed = await syncRepo.deleteStaleHeaders(
         mailbox: 'inbox',
@@ -263,11 +264,14 @@ class SmartschoolInboxController extends AsyncNotifier<int> {
       final removedSuffix = removed > 0 ? ' · $removed removed' : '';
       status.add(
         StatusEntryType.info,
-        'Smartschool inbox sync: ${headers.length} headers scanned · $persisted new/updated$removedSuffix.',
+        'Smartschool inbox sync: ${headers.length} headers scanned · ${newlyInserted.length} new/updated$removedSuffix.',
       );
     } catch (error) {
       status.add(StatusEntryType.warning, 'Local inbox sync failed: $error');
     }
+
+    // Eagerly fetch full detail for newly inserted messages to resolve identities.
+    await _syncDetailForHeaders(newlyInserted, status, syncRepo);
 
     // Initialize polling with the seen message IDs
     final messageIds = headers.map((h) => h.id).toList();
@@ -290,7 +294,7 @@ class SmartschoolInboxController extends AsyncNotifier<int> {
         boxType: SmartschoolBoxType.sent,
       );
 
-      final persisted = await syncRepository.syncHeaders(
+      final newlySent = await syncRepository.syncHeaders(
         sentHeaders,
         mailbox: 'sent',
       );
@@ -304,8 +308,10 @@ class SmartschoolInboxController extends AsyncNotifier<int> {
       _sentHeadersBootstrapDone = true;
       status.add(
         StatusEntryType.info,
-        'Smartschool sent sync: ${sentHeaders.length} headers scanned · $persisted new/updated$removedSuffix.',
+        'Smartschool sent sync: ${sentHeaders.length} headers scanned · ${newlySent.length} new/updated$removedSuffix.',
       );
+
+      await _syncDetailForHeaders(newlySent, status, syncRepository);
     } catch (error) {
       status.add(StatusEntryType.warning, 'Sent bootstrap failed: $error');
     }
@@ -335,9 +341,10 @@ class SmartschoolInboxController extends AsyncNotifier<int> {
 
     // Persist all headers from every thread and remove stale local rows.
     final allHeaders = threads.expand((t) => t.messages).toList();
+    final syncRepo = ref.read(smartschoolSyncRepositoryProvider);
+    List<SmartschoolMessageHeader> newlyInsertedThreads = const [];
     try {
-      final syncRepo = ref.read(smartschoolSyncRepositoryProvider);
-      final persisted = await syncRepo.syncHeaders(allHeaders);
+      newlyInsertedThreads = await syncRepo.syncHeaders(allHeaders);
       final activeIds = allHeaders.map((h) => h.id.toString()).toSet();
       final removed = await syncRepo.deleteStaleHeaders(
         mailbox: 'inbox',
@@ -346,7 +353,7 @@ class SmartschoolInboxController extends AsyncNotifier<int> {
       final removedSuffix = removed > 0 ? ' · $removed removed' : '';
       status.add(
         StatusEntryType.info,
-        'Smartschool inbox thread sync: ${allHeaders.length} headers scanned · $persisted new/updated$removedSuffix.',
+        'Smartschool inbox thread sync: ${allHeaders.length} headers scanned · ${newlyInsertedThreads.length} new/updated$removedSuffix.',
       );
     } catch (error) {
       status.add(
@@ -354,6 +361,8 @@ class SmartschoolInboxController extends AsyncNotifier<int> {
         'Local threaded inbox sync failed: $error',
       );
     }
+
+    await _syncDetailForHeaders(newlyInsertedThreads, status, syncRepo);
 
     // Initialize polling with all seen message IDs across threads
     final messageIds = threads
@@ -365,6 +374,43 @@ class SmartschoolInboxController extends AsyncNotifier<int> {
 
     return threads;
   }
+
+  Future<void> _syncDetailForHeaders(
+    List<SmartschoolMessageHeader> headers,
+    StatusController status,
+    SmartschoolSyncRepository syncRepo,
+  ) async {
+    if (headers.isEmpty) return;
+    final mc = ref.read(smartschoolMessagesProvider.notifier);
+    int failed = 0;
+    for (final header in headers) {
+      try {
+        final boxType = _boxTypeFromRealBox(header.realBox);
+        final details = await mc.getMessage(
+          header.id,
+          boxType: boxType,
+          reportStatus: false,
+        );
+        if (details.isNotEmpty) await syncRepo.syncDetail(details.first);
+      } catch (_) {
+        failed++;
+      }
+    }
+    if (failed > 0) {
+      status.add(
+        StatusEntryType.warning,
+        'Could not resolve participants for $failed/${headers.length} new messages — they will be visible once opened.',
+      );
+    }
+  }
+
+  static SmartschoolBoxType _boxTypeFromRealBox(String realBox) =>
+      switch (realBox.trim().toLowerCase()) {
+        'sent' => SmartschoolBoxType.sent,
+        'draft' => SmartschoolBoxType.draft,
+        'trash' => SmartschoolBoxType.trash,
+        _ => SmartschoolBoxType.inbox,
+      };
 
   int _unreadCountFromHeaders(List<SmartschoolMessageHeader> headers) {
     // header.unread is already corrected (inverted) in SmartschoolMessageHeader.fromJson.

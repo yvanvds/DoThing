@@ -8,6 +8,7 @@ SmartschoolMessageHeader _header({
   required int id,
   required bool unread,
   bool hasAttachment = false,
+  String mailbox = 'inbox',
 }) {
   return SmartschoolMessageHeader(
     id: id,
@@ -24,32 +25,61 @@ SmartschoolMessageHeader _header({
     allowReplyEnabled: true,
     hasReply: false,
     hasForward: false,
-    realBox: 'inbox',
+    realBox: mailbox,
   );
 }
 
 void main() {
   group('SmartschoolSyncRepository.syncHeaders', () {
-    test('inserts new headers and maps unread to isRead=false', () async {
+    test('inserts new headers and returns them as newly inserted', () async {
       final db = AppDatabase(NativeDatabase.memory());
       addTearDown(db.close);
       final repo = SmartschoolSyncRepository(db);
 
-      final inserted = await repo.syncHeaders([
+      final newHeaders = await repo.syncHeaders([
         _header(id: 101, unread: true, hasAttachment: true),
       ]);
 
-      expect(inserted, 1);
+      expect(newHeaders, hasLength(1));
+      expect(newHeaders.first.id, 101);
 
       final row = await db.messagesDao.findMessage(
         source: 'smartschool',
         externalId: '101',
       );
-
       expect(row, isNotNull);
       expect(row!.isRead, isFalse);
       expect(row.hasAttachments, isTrue);
       expect(row.subject, 'Subject 101');
+    });
+
+    test('stores senderAvatarUrl for inbox messages', () async {
+      final db = AppDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+      final repo = SmartschoolSyncRepository(db);
+
+      await repo.syncHeaders([_header(id: 102, unread: true)]);
+
+      final row = await db.messagesDao.findMessage(
+        source: 'smartschool',
+        externalId: '102',
+      );
+      expect(row!.senderAvatarUrl, 'https://example.com/avatar.png');
+    });
+
+    test('does not create any participant rows at header stage', () async {
+      final db = AppDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+      final repo = SmartschoolSyncRepository(db);
+
+      await repo.syncHeaders([_header(id: 103, unread: true)]);
+
+      final row = await db.messagesDao.findMessage(
+        source: 'smartschool',
+        externalId: '103',
+      );
+      final participants = await db.messagesDao.getParticipants(row!.id);
+      expect(participants, isEmpty);
     });
 
     test('skips unchanged headers by fingerprint', () async {
@@ -57,35 +87,34 @@ void main() {
       addTearDown(db.close);
       final repo = SmartschoolSyncRepository(db);
 
-      final first = await repo.syncHeaders([_header(id: 102, unread: true)]);
-      final second = await repo.syncHeaders([_header(id: 102, unread: true)]);
+      final first = await repo.syncHeaders([_header(id: 104, unread: true)]);
+      final second = await repo.syncHeaders([_header(id: 104, unread: true)]);
 
-      expect(first, 1);
-      expect(second, 0);
+      expect(first, hasLength(1));
+      expect(second, isEmpty);
     });
 
-    test('updates existing header when mutable fields change', () async {
+    test('updates existing header on fingerprint change but does not re-add to new list',
+        () async {
       final db = AppDatabase(NativeDatabase.memory());
       addTearDown(db.close);
       final repo = SmartschoolSyncRepository(db);
 
-      await repo.syncHeaders([_header(id: 103, unread: true)]);
-      final updated = await repo.syncHeaders([_header(id: 103, unread: false)]);
+      await repo.syncHeaders([_header(id: 105, unread: true)]);
+      final updated = await repo.syncHeaders([_header(id: 105, unread: false)]);
 
-      expect(updated, 1);
+      expect(updated, isEmpty);
 
       final row = await db.messagesDao.findMessage(
         source: 'smartschool',
-        externalId: '103',
+        externalId: '105',
       );
-
-      expect(row, isNotNull);
       expect(row!.isRead, isTrue);
     });
   });
 
   group('SmartschoolSyncRepository.syncDetail', () {
-    test('stores body detail and replaces participants', () async {
+    test('creates participants only for recipients with stable IDs', () async {
       final db = AppDatabase(NativeDatabase.memory());
       addTearDown(db.close);
       final repo = SmartschoolSyncRepository(db);
@@ -99,8 +128,15 @@ void main() {
           subject: 'Exam update',
           body: '<p>Hello <b>class</b></p>',
           date: '2026-04-10T12:00:00Z',
-          receivers: ['Alice', 'Bob'],
-          ccReceivers: ['Counselor'],
+          receivers: [
+            // Alice has no stable ID — skipped
+            SmartschoolMessageRecipient(displayName: 'Alice'),
+            // Bob has a stable userId — kept
+            SmartschoolMessageRecipient(displayName: 'Bob', userId: 99),
+          ],
+          replyAllToRecipients: [
+            SmartschoolMessageRecipient(displayName: 'Bob', userId: 99),
+          ],
         ),
       );
 
@@ -108,19 +144,160 @@ void main() {
         source: 'smartschool',
         externalId: '200',
       );
-      expect(row, isNotNull);
-      expect(row!.bodyRaw, '<p>Hello <b>class</b></p>');
-      expect(row.bodyText, 'Hello class');
+      final participants = await db.messagesDao.getParticipants(row!.id);
 
-      final participants = await db.messagesDao.getParticipants(row.id);
-      expect(participants, hasLength(4));
-      expect(
-        participants
-            .where((p) => p.role == 'sender')
-            .single
-            .displayNameSnapshot,
-        'Teacher',
+      // Only Bob (stable userId) should produce a participant row.
+      // Teacher (sender) is not in replyAllToRecipients → no row.
+      // Alice (no ID) → no row.
+      expect(participants, hasLength(1));
+      expect(participants.single.role, 'to');
+
+      final identity = await db.contactsDao.findIdentity(
+        source: 'smartschool',
+        externalId: 'user:99',
       );
+      expect(identity, isNotNull);
+      expect(participants.single.contactIdentityId, identity!.id);
+    });
+
+    test('resolves sender identity from replyAllToRecipients', () async {
+      final db = AppDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+      final repo = SmartschoolSyncRepository(db);
+
+      await repo.syncHeaders([_header(id: 201, unread: true)]);
+
+      await repo.syncDetail(
+        const SmartschoolMessageDetail(
+          id: 201,
+          from: 'Teacher',
+          subject: 'Reply all',
+          body: '<p>Hello</p>',
+          date: '2026-04-10T12:00:00Z',
+          receivers: [SmartschoolMessageRecipient(displayName: 'Alice')],
+          replyAllToRecipients: [
+            // Teacher is in replyAllToRecipients with a stable ID.
+            SmartschoolMessageRecipient(
+              displayName: 'Teacher',
+              userId: 111,
+              ssId: 222,
+            ),
+          ],
+        ),
+      );
+
+      final row = await db.messagesDao.findMessage(
+        source: 'smartschool',
+        externalId: '201',
+      );
+      final participants = await db.messagesDao.getParticipants(row!.id);
+
+      // Sender resolved via replyAllToRecipients.
+      final senderParticipant = participants.where((p) => p.role == 'sender');
+      expect(senderParticipant, hasLength(1));
+
+      final identity = await db.contactsDao.findIdentity(
+        source: 'smartschool',
+        externalId: 'user:111',
+      );
+      expect(identity, isNotNull);
+      expect(senderParticipant.single.contactIdentityId, identity!.id);
+
+      // Alice has no stable ID → no participant row.
+      final toParticipants = participants.where((p) => p.role == 'to');
+      expect(toParticipants, isEmpty);
+    });
+
+    test('never stores display:-prefixed external IDs', () async {
+      final db = AppDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+      final repo = SmartschoolSyncRepository(db);
+
+      await repo.syncHeaders([_header(id: 202, unread: true)]);
+
+      // Detail where no one has a stable ID.
+      await repo.syncDetail(
+        const SmartschoolMessageDetail(
+          id: 202,
+          from: 'Unknown Person',
+          subject: 'No IDs',
+          body: '<p>Hi</p>',
+          date: '2026-04-10T12:00:00Z',
+          receivers: [SmartschoolMessageRecipient(displayName: 'Someone')],
+        ),
+      );
+
+      // The contact_identities table must remain empty (no display: keys).
+      final allIdentities = await db.select(db.contactIdentities).get();
+      expect(
+        allIdentities.any((i) => i.externalId.startsWith('display:')),
+        isFalse,
+      );
+    });
+
+    test('resolves CC recipients from replyAllCcRecipients', () async {
+      final db = AppDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+      final repo = SmartschoolSyncRepository(db);
+
+      await repo.syncHeaders([_header(id: 203, unread: true)]);
+
+      await repo.syncDetail(
+        const SmartschoolMessageDetail(
+          id: 203,
+          from: 'Teacher',
+          subject: 'CC test',
+          body: '<p>Test</p>',
+          date: '2026-04-10T12:00:00Z',
+          ccReceivers: [SmartschoolMessageRecipient(displayName: 'Counselor')],
+          replyAllCcRecipients: [
+            SmartschoolMessageRecipient(
+              displayName: 'Counselor',
+              userId: 333,
+              ssId: 444,
+            ),
+          ],
+        ),
+      );
+
+      final row = await db.messagesDao.findMessage(
+        source: 'smartschool',
+        externalId: '203',
+      );
+      final participants = await db.messagesDao.getParticipants(row!.id);
+      final ccRows = participants.where((p) => p.role == 'cc').toList();
+      expect(ccRows, hasLength(1));
+
+      final identity = await db.contactsDao.findIdentity(
+        source: 'smartschool',
+        externalId: 'user:333',
+      );
+      expect(identity, isNotNull);
+      expect(ccRows.single.contactIdentityId, identity!.id);
+    });
+
+    test('updates FTS row with body text on syncDetail', () async {
+      final db = AppDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+      final repo = SmartschoolSyncRepository(db);
+
+      await repo.syncHeaders([_header(id: 204, unread: true)]);
+      await repo.syncDetail(
+        const SmartschoolMessageDetail(
+          id: 204,
+          from: 'Teacher',
+          subject: 'FTS test',
+          body: '<p>Searchable content here</p>',
+          date: '2026-04-10T12:00:00Z',
+        ),
+      );
+
+      final row = await db.messagesDao.findMessage(
+        source: 'smartschool',
+        externalId: '204',
+      );
+      final results = await db.searchDao.search('searchable');
+      expect(results.any((r) => r.messageId == row!.id), isTrue);
     });
   });
 }
