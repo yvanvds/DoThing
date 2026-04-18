@@ -170,6 +170,11 @@ class _AiSectionState extends ConsumerState<AiSection> {
               .read(aiSettingsProvider.notifier)
               .updateSettings(settings.copyWith(streamingEnabled: value));
         },
+        onShowReasoningChanged: (value) async {
+          await ref
+              .read(aiSettingsProvider.notifier)
+              .updateSettings(settings.copyWith(showAgentReasoning: value));
+        },
         onBaseUrlChanged: _scheduleSave,
         onToggleKeyVisible: () => setState(() => _keyVisible = !_keyVisible),
         onSaveApiKey: _saveApiKey,
@@ -195,6 +200,7 @@ class _AiSectionForm extends StatelessWidget {
     required this.onFastModelChanged,
     required this.onCheapModelChanged,
     required this.onStreamingChanged,
+    required this.onShowReasoningChanged,
     required this.onBaseUrlChanged,
     required this.onToggleKeyVisible,
     required this.onSaveApiKey,
@@ -213,6 +219,7 @@ class _AiSectionForm extends StatelessWidget {
   final ValueChanged<String?> onFastModelChanged;
   final ValueChanged<String?> onCheapModelChanged;
   final ValueChanged<bool> onStreamingChanged;
+  final ValueChanged<bool> onShowReasoningChanged;
   final VoidCallback onBaseUrlChanged;
   final VoidCallback onToggleKeyVisible;
   final VoidCallback onSaveApiKey;
@@ -335,6 +342,16 @@ class _AiSectionForm extends StatelessWidget {
           subtitle: const Text('Show assistant output progressively in chat'),
           value: settings.streamingEnabled,
           onChanged: busy ? null : onStreamingChanged,
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Show agent reasoning'),
+          subtitle: const Text(
+            'Prepend the planner\'s intent, domains, and risk tier to '
+            'assistant replies.',
+          ),
+          value: settings.showAgentReasoning,
+          onChanged: busy ? null : onShowReasoningChanged,
         ),
         const SizedBox(height: 8),
         Row(

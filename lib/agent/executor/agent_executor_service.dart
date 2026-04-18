@@ -10,6 +10,11 @@ import '../tools/tool_invoker.dart';
 import 'tool_call.dart';
 import 'tool_result.dart';
 
+/// Hook fired after the executor resolves a tool call's outcome (either
+/// by invoking the handler or by accepting a gate denial). The
+/// orchestrator subscribes to this to populate the trace sidecar.
+typedef ToolTraceSink = void Function(ToolCall call, ToolResult result);
+
 /// Runs the executor stage of an agent turn: given a plan-bounded tool
 /// list and the existing conversation history, drives the multi-turn
 /// tool loop against the shared [AiChatTransport] until the model stops
@@ -52,6 +57,7 @@ class AgentExecutorService {
     int maxIterations = 6,
     bool Function()? isCanceled,
     ToolConfirmationGate? gate,
+    ToolTraceSink? onToolExecuted,
   }) async* {
     if (maxIterations <= 0) {
       yield const AiStreamEvent.error(
@@ -148,15 +154,14 @@ class AgentExecutorService {
           if (isCanceled?.call() ?? false) return;
           if (!decision.approved) {
             result = ToolResult.canceled(call.id, reason: decision.reason);
-            _surfaceToolStatus(call, result);
           } else {
             result = await invoker.invoke(call);
-            _surfaceToolStatus(call, result);
           }
         } else {
           result = await invoker.invoke(call);
-          _surfaceToolStatus(call, result);
         }
+        _surfaceToolStatus(call, result);
+        onToolExecuted?.call(call, result);
 
         workingHistory = [
           ...workingHistory,

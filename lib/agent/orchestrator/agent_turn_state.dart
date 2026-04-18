@@ -1,6 +1,7 @@
 import '../confirmation/pending_confirmation.dart';
 import '../executor/tool_call.dart';
 import '../planner/agent_plan.dart';
+import 'agent_tool_trace.dart';
 
 /// Phase of the agent loop for the conversation currently being observed
 /// by the orchestrator. Expands in Phase 4+ with executor states.
@@ -41,6 +42,7 @@ class AgentTurnState {
     this.currentPlan,
     this.pending,
     this.toolCallsInTurn = const <ToolCall>[],
+    this.traces = const <AgentToolTrace>[],
     this.lastPlannerError,
   });
 
@@ -49,6 +51,11 @@ class AgentTurnState {
   final AgentPlan? currentPlan;
   final PendingConfirmation? pending;
   final List<ToolCall> toolCallsInTurn;
+
+  /// Commit/privileged tool invocations recorded during the active turn,
+  /// surfaced above the chat via the trace sidecar. Cleared at the start
+  /// of each new planner turn and on [bindConversation].
+  final List<AgentToolTrace> traces;
 
   /// Short diagnostic from the last planner failure, surfaced in the
   /// status terminal. `null` when the last plan succeeded or none ran.
@@ -61,6 +68,8 @@ class AgentTurnState {
     PendingConfirmation? pending,
     bool clearPending = false,
     List<ToolCall>? toolCallsInTurn,
+    List<AgentToolTrace>? traces,
+    bool clearTraces = false,
     String? lastPlannerError,
     bool clearPlannerError = false,
   }) {
@@ -70,6 +79,9 @@ class AgentTurnState {
       currentPlan: clearPlan ? null : (currentPlan ?? this.currentPlan),
       pending: clearPending ? null : (pending ?? this.pending),
       toolCallsInTurn: toolCallsInTurn ?? this.toolCallsInTurn,
+      traces: clearTraces
+          ? const <AgentToolTrace>[]
+          : (traces ?? this.traces),
       lastPlannerError: clearPlannerError
           ? null
           : (lastPlannerError ?? this.lastPlannerError),

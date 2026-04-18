@@ -8,6 +8,7 @@ class AiSettings {
     this.cheapModel = 'gpt-5.4-nano',
     this.chatModelPreset = 'complex',
     this.streamingEnabled = true,
+    this.showAgentReasoning = false,
     this.baseUrl = 'https://api.openai.com',
     this.hasApiKey = false,
     this.lastTestAtIso,
@@ -30,6 +31,11 @@ class AiSettings {
   final String chatModelPreset;
 
   final bool streamingEnabled;
+
+  /// When true, the agent planner preamble (intent, domains, risk) is
+  /// prepended to assistant messages so the user can see the reasoning.
+  /// Clarifying questions are always shown regardless of this flag.
+  final bool showAgentReasoning;
   final String baseUrl;
   final bool hasApiKey;
   final String? lastTestAtIso;
@@ -48,6 +54,7 @@ class AiSettings {
     String? cheapModel,
     String? chatModelPreset,
     bool? streamingEnabled,
+    bool? showAgentReasoning,
     String? baseUrl,
     bool? hasApiKey,
     String? lastTestAtIso,
@@ -62,6 +69,7 @@ class AiSettings {
       cheapModel: cheapModel ?? this.cheapModel,
       chatModelPreset: chatModelPreset ?? this.chatModelPreset,
       streamingEnabled: streamingEnabled ?? this.streamingEnabled,
+      showAgentReasoning: showAgentReasoning ?? this.showAgentReasoning,
       baseUrl: baseUrl ?? this.baseUrl,
       hasApiKey: hasApiKey ?? this.hasApiKey,
       lastTestAtIso: clearTestResult
@@ -96,6 +104,7 @@ class AiSettings {
       cheapModel: nonEmpty(json['cheapModel'] as String?, 'gpt-5.4-nano'),
       chatModelPreset: nonEmpty(json['chatModelPreset'] as String?, 'complex'),
       streamingEnabled: json['streamingEnabled'] as bool? ?? true,
+      showAgentReasoning: json['showAgentReasoning'] as bool? ?? false,
       baseUrl: nonEmpty(json['baseUrl'] as String?, 'https://api.openai.com'),
       hasApiKey: json['hasApiKey'] as bool? ?? false,
       lastTestAtIso: json['lastTestAtIso'] as String?,
@@ -112,6 +121,7 @@ class AiSettings {
       'cheapModel': cheapModel,
       'chatModelPreset': chatModelPreset,
       'streamingEnabled': streamingEnabled,
+      'showAgentReasoning': showAgentReasoning,
       'baseUrl': baseUrl,
       'hasApiKey': hasApiKey,
       'lastTestAtIso': lastTestAtIso,

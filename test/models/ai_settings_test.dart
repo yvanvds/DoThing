@@ -33,6 +33,20 @@ void main() {
       expect(json['chatModelPreset'], 'default');
     });
 
+    test('defaults showAgentReasoning to false', () {
+      const settings = AiSettings();
+      expect(settings.showAgentReasoning, isFalse);
+    });
+
+    test('round-trips showAgentReasoning through JSON', () {
+      const settings = AiSettings(showAgentReasoning: true);
+      final json = settings.toJson();
+      expect(json['showAgentReasoning'], isTrue);
+
+      final restored = AiSettings.fromJson(json);
+      expect(restored.showAgentReasoning, isTrue);
+    });
+
     test('copyWith updates chatModelPreset only', () {
       const base = AiSettings(
         complexModel: 'gpt-5.4',

@@ -235,6 +235,7 @@ class AiChatController extends AsyncNotifier<AiChatUiState> {
         tools: executorTools,
         context: context,
         gate: orchestrator.confirmationGate,
+        onToolExecuted: orchestrator.recordToolTrace,
       );
     } else {
       final transport = ref.read(aiChatTransportProvider);

@@ -10,12 +10,14 @@ import '../capabilities/capability_catalog.dart';
 import '../confirmation/pending_confirmation.dart';
 import '../confirmation/tool_confirmation_decision.dart';
 import '../executor/tool_call.dart';
+import '../executor/tool_result.dart';
 import '../planner/agent_plan.dart';
 import '../planner/agent_planner_service.dart';
 import '../planner/planner_prompt.dart';
 import '../tools/tool_descriptor.dart';
 import '../tools/tool_registry.dart';
 import '../tools/tool_risk_tier.dart';
+import 'agent_tool_trace.dart';
 import 'agent_turn_state.dart';
 
 /// Return value of [AgentOrchestratorController.planTurn]. Tells the
@@ -157,12 +159,45 @@ class AgentOrchestratorController extends Notifier<AgentTurnState> {
         ? AgentTurnPhase.awaitingClarification
         : AgentTurnPhase.planned;
 
-    state = state.copyWith(phase: nextPhase, currentPlan: plan);
+    state = state.copyWith(
+      phase: nextPhase,
+      currentPlan: plan,
+      clearTraces: true,
+    );
 
     return PlannerOutcome(
       plan: plan,
-      preamble: _formatPreamble(plan),
+      preamble: _formatPreamble(plan, showReasoning: settings.showAgentReasoning),
       error: null,
+    );
+  }
+
+  /// Records the outcome of a tool invocation on the trace sidecar. Only
+  /// commit and privileged tiers emit a card — read/prepare stay silent.
+  /// Called by the executor via [onToolExecuted] after each tool runs.
+  void recordToolTrace(ToolCall call, ToolResult result) {
+    final registry = ref.read(toolRegistryProvider);
+    final descriptor = registry.byName(call.toolName);
+    final risk = descriptor?.risk;
+    if (risk == null || !risk.emitsTraceCard) {
+      return;
+    }
+
+    final label = descriptor?.humanPreview?.call(call.arguments) ?? call.toolName;
+    final canceled = result.structured?['canceled'] == true;
+    final trace = AgentToolTrace(
+      id: call.id,
+      toolName: call.toolName,
+      label: label,
+      risk: risk,
+      isError: result.isError && !canceled,
+      canceled: canceled,
+      detail: result.summary,
+      createdAt: DateTime.now(),
+    );
+
+    state = state.copyWith(
+      traces: [...state.traces, trace],
     );
   }
 
@@ -320,14 +355,19 @@ class AgentOrchestratorController extends Notifier<AgentTurnState> {
   }
 
   /// Renders the plan into the markdown preamble seeded into the
-  /// assistant message. Keep terse — users can always hide it via the
-  /// Phase 6 "show reasoning" toggle.
-  String _formatPreamble(AgentPlan plan) {
+  /// assistant message. Clarifying questions are always shown because
+  /// they are functionally part of the assistant turn; the decorative
+  /// intent/domains/risk block is gated on [showReasoning].
+  String _formatPreamble(AgentPlan plan, {required bool showReasoning}) {
     if (plan.needsMoreInformation) {
       final question = plan.clarifyingQuestion?.trim();
       if (question != null && question.isNotEmpty) {
         return '_Planner:_ $question\n\n';
       }
+    }
+
+    if (!showReasoning) {
+      return '';
     }
 
     final intent = plan.intent.trim();

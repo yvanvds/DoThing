@@ -64,6 +64,20 @@ ToolDescriptor _mailboxRead() {
   );
 }
 
+ToolDescriptor _mailboxCommit() {
+  return ToolDescriptor(
+    name: 'archive_message',
+    description: 'archive one message',
+    domain: CapabilityDomain.mailbox,
+    mode: ToolMode.commit,
+    risk: ToolRiskTier.commit,
+    arguments: ToolArgumentSchema.empty,
+    humanPreview: (args) => 'Archive message ${args['id']}',
+    invoke: (_, _) async =>
+        const ToolResult(toolCallId: '', summary: 'Archived 42.'),
+  );
+}
+
 ToolDescriptor _mailboxPrivileged() {
   return ToolDescriptor(
     name: 'delete_message',
@@ -159,53 +173,107 @@ void main() {
       expect(state.lastPlannerError, 'missing_api_key');
     });
 
-    test('produces a markdown preamble when the planner returns a plan',
-        () async {
-      final transport = _FakeTransport(
-        (_) => _jsonShot(
-          '{"intent":"triage inbox",'
-          '"domains":["mailbox"],'
-          '"rationale":"user asked to triage",'
-          '"anticipated_max_risk":"read",'
-          '"needs_more_information":false,'
-          '"clarifying_question":null}',
-        ),
-      );
-      final container = ProviderContainer(
-        overrides: [
-          toolRegistryProvider.overrideWithValue(
-            ToolRegistry([_mailboxRead()]),
+    test(
+      'produces a markdown preamble when the planner returns a plan and '
+      'showAgentReasoning is on',
+      () async {
+        final transport = _FakeTransport(
+          (_) => _jsonShot(
+            '{"intent":"triage inbox",'
+            '"domains":["mailbox"],'
+            '"rationale":"user asked to triage",'
+            '"anticipated_max_risk":"read",'
+            '"needs_more_information":false,'
+            '"clarifying_question":null}',
           ),
-          aiChatTransportProvider.overrideWithValue(transport),
-          aiSettingsProvider.overrideWith(
-            () => _FakeAiSettingsController(
-              settings: const AiSettings(hasApiKey: true),
-              apiKey: 'token',
+        );
+        final container = ProviderContainer(
+          overrides: [
+            toolRegistryProvider.overrideWithValue(
+              ToolRegistry([_mailboxRead()]),
             ),
+            aiChatTransportProvider.overrideWithValue(transport),
+            aiSettingsProvider.overrideWith(
+              () => _FakeAiSettingsController(
+                settings: const AiSettings(
+                  hasApiKey: true,
+                  showAgentReasoning: true,
+                ),
+                apiKey: 'token',
+              ),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        final orchestrator = container.read(
+          agentOrchestratorControllerProvider.notifier,
+        );
+
+        final outcome = await orchestrator.planTurn(
+          conversationId: 'c1',
+          prompt: 'triage',
+          history: const [],
+        );
+
+        expect(outcome.plan, isNotNull);
+        expect(outcome.preamble, contains('**Plan:** triage inbox'));
+        expect(outcome.preamble, contains('mailbox'));
+        expect(outcome.preamble, endsWith('\n\n---\n\n'));
+
+        final state = container.read(agentOrchestratorControllerProvider);
+        expect(state.phase, AgentTurnPhase.planned);
+        expect(state.currentPlan?.intent, 'triage inbox');
+      },
+    );
+
+    test(
+      'omits the reasoning preamble by default but keeps the plan',
+      () async {
+        final transport = _FakeTransport(
+          (_) => _jsonShot(
+            '{"intent":"triage inbox",'
+            '"domains":["mailbox"],'
+            '"rationale":"user asked to triage",'
+            '"anticipated_max_risk":"read",'
+            '"needs_more_information":false,'
+            '"clarifying_question":null}',
           ),
-        ],
-      );
-      addTearDown(container.dispose);
+        );
+        final container = ProviderContainer(
+          overrides: [
+            toolRegistryProvider.overrideWithValue(
+              ToolRegistry([_mailboxRead()]),
+            ),
+            aiChatTransportProvider.overrideWithValue(transport),
+            aiSettingsProvider.overrideWith(
+              () => _FakeAiSettingsController(
+                settings: const AiSettings(hasApiKey: true),
+                apiKey: 'token',
+              ),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
 
-      final orchestrator = container.read(
-        agentOrchestratorControllerProvider.notifier,
-      );
+        final orchestrator = container.read(
+          agentOrchestratorControllerProvider.notifier,
+        );
 
-      final outcome = await orchestrator.planTurn(
-        conversationId: 'c1',
-        prompt: 'triage',
-        history: const [],
-      );
+        final outcome = await orchestrator.planTurn(
+          conversationId: 'c1',
+          prompt: 'triage',
+          history: const [],
+        );
 
-      expect(outcome.plan, isNotNull);
-      expect(outcome.preamble, contains('**Plan:** triage inbox'));
-      expect(outcome.preamble, contains('mailbox'));
-      expect(outcome.preamble, endsWith('\n\n---\n\n'));
-
-      final state = container.read(agentOrchestratorControllerProvider);
-      expect(state.phase, AgentTurnPhase.planned);
-      expect(state.currentPlan?.intent, 'triage inbox');
-    });
+        expect(outcome.plan, isNotNull);
+        expect(outcome.preamble, isEmpty);
+        expect(
+          container.read(agentOrchestratorControllerProvider).phase,
+          AgentTurnPhase.planned,
+        );
+      },
+    );
 
     test('uses the clarifying question as the preamble when asked for info',
         () async {
@@ -475,6 +543,161 @@ void main() {
         expect(
           tools.map((t) => t.name).toSet(),
           {'list_inbox_headers', 'delete_message'},
+        );
+      },
+    );
+
+    test(
+      'recordToolTrace appends commit-tier tools to the sidecar trace list',
+      () async {
+        final transport = _FakeTransport((_) => const Stream.empty());
+        final container = ProviderContainer(
+          overrides: [
+            toolRegistryProvider.overrideWithValue(
+              ToolRegistry([_mailboxRead(), _mailboxCommit()]),
+            ),
+            aiChatTransportProvider.overrideWithValue(transport),
+            aiSettingsProvider.overrideWith(
+              () => _FakeAiSettingsController(
+                settings: const AiSettings(hasApiKey: true),
+                apiKey: 'token',
+              ),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        final orchestrator = container.read(
+          agentOrchestratorControllerProvider.notifier,
+        );
+
+        // Read tier: should NOT emit a trace card.
+        orchestrator.recordToolTrace(
+          const ToolCall(
+            id: 'r1',
+            toolName: 'list_inbox_headers',
+            arguments: <String, Object?>{},
+          ),
+          const ToolResult(toolCallId: 'r1', summary: 'ok'),
+        );
+        expect(
+          container.read(agentOrchestratorControllerProvider).traces,
+          isEmpty,
+        );
+
+        // Commit tier: should emit a trace card with the humanPreview label.
+        orchestrator.recordToolTrace(
+          const ToolCall(
+            id: 'c1',
+            toolName: 'archive_message',
+            arguments: <String, Object?>{'id': 42},
+          ),
+          const ToolResult(toolCallId: 'c1', summary: 'Archived 42.'),
+        );
+        final traces =
+            container.read(agentOrchestratorControllerProvider).traces;
+        expect(traces, hasLength(1));
+        expect(traces.single.label, 'Archive message 42');
+        expect(traces.single.canceled, isFalse);
+        expect(traces.single.isError, isFalse);
+      },
+    );
+
+    test(
+      'recordToolTrace flags canceled results distinctly from errors',
+      () async {
+        final transport = _FakeTransport((_) => const Stream.empty());
+        final container = ProviderContainer(
+          overrides: [
+            toolRegistryProvider.overrideWithValue(
+              ToolRegistry([_mailboxCommit()]),
+            ),
+            aiChatTransportProvider.overrideWithValue(transport),
+            aiSettingsProvider.overrideWith(
+              () => _FakeAiSettingsController(
+                settings: const AiSettings(hasApiKey: true),
+                apiKey: 'token',
+              ),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        final orchestrator = container.read(
+          agentOrchestratorControllerProvider.notifier,
+        );
+
+        orchestrator.recordToolTrace(
+          const ToolCall(
+            id: 'c9',
+            toolName: 'archive_message',
+            arguments: <String, Object?>{'id': 7},
+          ),
+          ToolResult.canceled('c9', reason: 'User declined.'),
+        );
+
+        final trace =
+            container.read(agentOrchestratorControllerProvider).traces.single;
+        expect(trace.canceled, isTrue);
+        expect(trace.isError, isFalse);
+      },
+    );
+
+    test(
+      'planTurn clears traces from the previous turn',
+      () async {
+        final transport = _FakeTransport(
+          (_) => _jsonShot(
+            '{"intent":"t",'
+            '"domains":["mailbox"],'
+            '"rationale":"",'
+            '"anticipated_max_risk":"read",'
+            '"needs_more_information":false,'
+            '"clarifying_question":null}',
+          ),
+        );
+        final container = ProviderContainer(
+          overrides: [
+            toolRegistryProvider.overrideWithValue(
+              ToolRegistry([_mailboxRead(), _mailboxCommit()]),
+            ),
+            aiChatTransportProvider.overrideWithValue(transport),
+            aiSettingsProvider.overrideWith(
+              () => _FakeAiSettingsController(
+                settings: const AiSettings(hasApiKey: true),
+                apiKey: 'token',
+              ),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        final orchestrator = container.read(
+          agentOrchestratorControllerProvider.notifier,
+        );
+
+        orchestrator.recordToolTrace(
+          const ToolCall(
+            id: 'c1',
+            toolName: 'archive_message',
+            arguments: <String, Object?>{'id': 1},
+          ),
+          const ToolResult(toolCallId: 'c1', summary: 'ok'),
+        );
+        expect(
+          container.read(agentOrchestratorControllerProvider).traces,
+          hasLength(1),
+        );
+
+        await orchestrator.planTurn(
+          conversationId: 'c1',
+          prompt: 'next turn',
+          history: const [],
+        );
+
+        expect(
+          container.read(agentOrchestratorControllerProvider).traces,
+          isEmpty,
         );
       },
     );

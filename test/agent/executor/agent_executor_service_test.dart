@@ -496,6 +496,115 @@ void main() {
     );
 
     test(
+      'onToolExecuted fires for every tool invocation — approved or denied',
+      () async {
+        final tool = _privilegedTool(
+          name: 'delete_message',
+          invoke: (_) async =>
+              const ToolResult(toolCallId: '', summary: 'Deleted.'),
+        );
+
+        final transport = _ScriptedTransport([
+          const [
+            AiStreamEvent.toolCall(
+              ToolCall(
+                id: 'call-1',
+                toolName: 'delete_message',
+                arguments: <String, Object?>{},
+              ),
+            ),
+            AiStreamEvent.done(),
+          ],
+          const [
+            AiStreamEvent.delta('Done.'),
+            AiStreamEvent.done(),
+          ],
+        ]);
+
+        final container = ProviderContainer(
+          overrides: [
+            aiChatTransportProvider.overrideWithValue(transport),
+            toolRegistryProvider.overrideWithValue(ToolRegistry([tool])),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        final traces = <(ToolCall, ToolResult)>[];
+        final service = container.read(agentExecutorServiceProvider);
+        await service
+            .run(
+              model: 'm',
+              apiKey: 'k',
+              baseUrl: 'https://x',
+              history: [_userMessage('do it')],
+              tools: [tool],
+              gate: (_) async => const ConfirmationDecision.approved(),
+              onToolExecuted: (call, result) => traces.add((call, result)),
+            )
+            .toList();
+
+        expect(traces, hasLength(1));
+        expect(traces.single.$1.toolName, 'delete_message');
+        expect(traces.single.$2.summary, 'Deleted.');
+      },
+    );
+
+    test(
+      'onToolExecuted receives canceled results when the gate denies',
+      () async {
+        final tool = _privilegedTool(
+          name: 'delete_message',
+          invoke: (_) async =>
+              const ToolResult(toolCallId: '', summary: 'Deleted.'),
+        );
+
+        final transport = _ScriptedTransport([
+          const [
+            AiStreamEvent.toolCall(
+              ToolCall(
+                id: 'call-1',
+                toolName: 'delete_message',
+                arguments: <String, Object?>{},
+              ),
+            ),
+            AiStreamEvent.done(),
+          ],
+          const [
+            AiStreamEvent.delta('ok'),
+            AiStreamEvent.done(),
+          ],
+        ]);
+
+        final container = ProviderContainer(
+          overrides: [
+            aiChatTransportProvider.overrideWithValue(transport),
+            toolRegistryProvider.overrideWithValue(ToolRegistry([tool])),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        final traces = <(ToolCall, ToolResult)>[];
+        final service = container.read(agentExecutorServiceProvider);
+        await service
+            .run(
+              model: 'm',
+              apiKey: 'k',
+              baseUrl: 'https://x',
+              history: [_userMessage('do it')],
+              tools: [tool],
+              gate: (_) async =>
+                  const ConfirmationDecision.denied(reason: 'no'),
+              onToolExecuted: (call, result) => traces.add((call, result)),
+            )
+            .toList();
+
+        expect(traces, hasLength(1));
+        expect(traces.single.$2.isError, isTrue);
+        expect(traces.single.$2.structured?['canceled'], isTrue);
+      },
+    );
+
+    test(
       'on gate denial, injects a canceled tool result without invoking',
       () async {
         var invoked = false;

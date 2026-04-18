@@ -16,6 +16,7 @@ import '../../../controllers/chat_controller.dart';
 import '../../../models/ai/ai_chat_models.dart';
 import '../../../models/ai/ai_settings.dart';
 import 'agent_confirmation_card.dart';
+import 'agent_tool_trace_card.dart';
 
 part 'chat_view_widget.dart';
 part 'chat_view_state.dart';

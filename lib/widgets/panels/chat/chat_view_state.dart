@@ -34,6 +34,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
               : null,
         ),
         const AgentConfirmationCard(),
+        const AgentToolTraceList(),
         Expanded(
           child: SelectionArea(
             child: Chat(
