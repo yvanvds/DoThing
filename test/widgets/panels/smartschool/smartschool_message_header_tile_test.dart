@@ -4,7 +4,7 @@ import 'package:do_thing/controllers/smartschool_inbox_controller.dart';
 import 'package:do_thing/services/office365/office365_mail_service.dart';
 import 'package:do_thing/services/smartschool/smartschool_messages_controller.dart';
 import 'package:do_thing/services/smartschool/smartschool_selected_message_controller.dart';
-import 'package:do_thing/widgets/panels/smartschool/message_header_tile.dart';
+import 'package:do_thing/widgets/panels/messages/message_header_tile.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';

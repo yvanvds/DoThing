@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../controllers/context_panel_controller.dart';
 import '../settings/settings_page.dart';
 import 'panels/ai/chat_history_panel.dart';
-import 'panels/smartschool/messages_panel.dart';
+import 'panels/messages/messages_panel.dart';
 
 class ContextPanel extends ConsumerWidget {
   const ContextPanel({super.key});
