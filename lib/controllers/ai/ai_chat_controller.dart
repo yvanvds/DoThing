@@ -520,6 +520,7 @@ class AiChatController extends AsyncNotifier<AiChatUiState> {
       AiMessageRole.system => systemUserId,
       AiMessageRole.user => currentUserId,
       AiMessageRole.assistant => systemUserId,
+      AiMessageRole.tool => systemUserId,
     };
 
     return chat.Message.text(

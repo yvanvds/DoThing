@@ -4547,6 +4547,28 @@ class $AiChatMessagesTable extends AiChatMessages
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _toolCallsJsonMeta = const VerificationMeta(
+    'toolCallsJson',
+  );
+  @override
+  late final GeneratedColumn<String> toolCallsJson = GeneratedColumn<String>(
+    'tool_calls_json',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _toolCallIdMeta = const VerificationMeta(
+    'toolCallId',
+  );
+  @override
+  late final GeneratedColumn<String> toolCallId = GeneratedColumn<String>(
+    'tool_call_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -4585,6 +4607,8 @@ class $AiChatMessagesTable extends AiChatMessages
     contextKind,
     contextReferenceId,
     contextSummary,
+    toolCallsJson,
+    toolCallId,
     createdAt,
     updatedAt,
   ];
@@ -4696,6 +4720,24 @@ class $AiChatMessagesTable extends AiChatMessages
         ),
       );
     }
+    if (data.containsKey('tool_calls_json')) {
+      context.handle(
+        _toolCallsJsonMeta,
+        toolCallsJson.isAcceptableOrUnknown(
+          data['tool_calls_json']!,
+          _toolCallsJsonMeta,
+        ),
+      );
+    }
+    if (data.containsKey('tool_call_id')) {
+      context.handle(
+        _toolCallIdMeta,
+        toolCallId.isAcceptableOrUnknown(
+          data['tool_call_id']!,
+          _toolCallIdMeta,
+        ),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -4765,6 +4807,14 @@ class $AiChatMessagesTable extends AiChatMessages
         DriftSqlType.string,
         data['${effectivePrefix}context_summary'],
       ),
+      toolCallsJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}tool_calls_json'],
+      ),
+      toolCallId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}tool_call_id'],
+      ),
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}created_at'],
@@ -4795,6 +4845,8 @@ class AiChatMessage extends DataClass implements Insertable<AiChatMessage> {
   final String? contextKind;
   final String? contextReferenceId;
   final String? contextSummary;
+  final String? toolCallsJson;
+  final String? toolCallId;
   final DateTime createdAt;
   final DateTime updatedAt;
   const AiChatMessage({
@@ -4810,6 +4862,8 @@ class AiChatMessage extends DataClass implements Insertable<AiChatMessage> {
     this.contextKind,
     this.contextReferenceId,
     this.contextSummary,
+    this.toolCallsJson,
+    this.toolCallId,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -4841,6 +4895,12 @@ class AiChatMessage extends DataClass implements Insertable<AiChatMessage> {
     }
     if (!nullToAbsent || contextSummary != null) {
       map['context_summary'] = Variable<String>(contextSummary);
+    }
+    if (!nullToAbsent || toolCallsJson != null) {
+      map['tool_calls_json'] = Variable<String>(toolCallsJson);
+    }
+    if (!nullToAbsent || toolCallId != null) {
+      map['tool_call_id'] = Variable<String>(toolCallId);
     }
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
@@ -4875,6 +4935,12 @@ class AiChatMessage extends DataClass implements Insertable<AiChatMessage> {
       contextSummary: contextSummary == null && nullToAbsent
           ? const Value.absent()
           : Value(contextSummary),
+      toolCallsJson: toolCallsJson == null && nullToAbsent
+          ? const Value.absent()
+          : Value(toolCallsJson),
+      toolCallId: toolCallId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(toolCallId),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
     );
@@ -4902,6 +4968,8 @@ class AiChatMessage extends DataClass implements Insertable<AiChatMessage> {
         json['contextReferenceId'],
       ),
       contextSummary: serializer.fromJson<String?>(json['contextSummary']),
+      toolCallsJson: serializer.fromJson<String?>(json['toolCallsJson']),
+      toolCallId: serializer.fromJson<String?>(json['toolCallId']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
     );
@@ -4922,6 +4990,8 @@ class AiChatMessage extends DataClass implements Insertable<AiChatMessage> {
       'contextKind': serializer.toJson<String?>(contextKind),
       'contextReferenceId': serializer.toJson<String?>(contextReferenceId),
       'contextSummary': serializer.toJson<String?>(contextSummary),
+      'toolCallsJson': serializer.toJson<String?>(toolCallsJson),
+      'toolCallId': serializer.toJson<String?>(toolCallId),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
     };
@@ -4940,6 +5010,8 @@ class AiChatMessage extends DataClass implements Insertable<AiChatMessage> {
     Value<String?> contextKind = const Value.absent(),
     Value<String?> contextReferenceId = const Value.absent(),
     Value<String?> contextSummary = const Value.absent(),
+    Value<String?> toolCallsJson = const Value.absent(),
+    Value<String?> toolCallId = const Value.absent(),
     DateTime? createdAt,
     DateTime? updatedAt,
   }) => AiChatMessage(
@@ -4963,6 +5035,10 @@ class AiChatMessage extends DataClass implements Insertable<AiChatMessage> {
     contextSummary: contextSummary.present
         ? contextSummary.value
         : this.contextSummary,
+    toolCallsJson: toolCallsJson.present
+        ? toolCallsJson.value
+        : this.toolCallsJson,
+    toolCallId: toolCallId.present ? toolCallId.value : this.toolCallId,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
@@ -4994,6 +5070,12 @@ class AiChatMessage extends DataClass implements Insertable<AiChatMessage> {
       contextSummary: data.contextSummary.present
           ? data.contextSummary.value
           : this.contextSummary,
+      toolCallsJson: data.toolCallsJson.present
+          ? data.toolCallsJson.value
+          : this.toolCallsJson,
+      toolCallId: data.toolCallId.present
+          ? data.toolCallId.value
+          : this.toolCallId,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
@@ -5014,6 +5096,8 @@ class AiChatMessage extends DataClass implements Insertable<AiChatMessage> {
           ..write('contextKind: $contextKind, ')
           ..write('contextReferenceId: $contextReferenceId, ')
           ..write('contextSummary: $contextSummary, ')
+          ..write('toolCallsJson: $toolCallsJson, ')
+          ..write('toolCallId: $toolCallId, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
@@ -5034,6 +5118,8 @@ class AiChatMessage extends DataClass implements Insertable<AiChatMessage> {
     contextKind,
     contextReferenceId,
     contextSummary,
+    toolCallsJson,
+    toolCallId,
     createdAt,
     updatedAt,
   );
@@ -5053,6 +5139,8 @@ class AiChatMessage extends DataClass implements Insertable<AiChatMessage> {
           other.contextKind == this.contextKind &&
           other.contextReferenceId == this.contextReferenceId &&
           other.contextSummary == this.contextSummary &&
+          other.toolCallsJson == this.toolCallsJson &&
+          other.toolCallId == this.toolCallId &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt);
 }
@@ -5070,6 +5158,8 @@ class AiChatMessagesCompanion extends UpdateCompanion<AiChatMessage> {
   final Value<String?> contextKind;
   final Value<String?> contextReferenceId;
   final Value<String?> contextSummary;
+  final Value<String?> toolCallsJson;
+  final Value<String?> toolCallId;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   final Value<int> rowid;
@@ -5086,6 +5176,8 @@ class AiChatMessagesCompanion extends UpdateCompanion<AiChatMessage> {
     this.contextKind = const Value.absent(),
     this.contextReferenceId = const Value.absent(),
     this.contextSummary = const Value.absent(),
+    this.toolCallsJson = const Value.absent(),
+    this.toolCallId = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -5103,6 +5195,8 @@ class AiChatMessagesCompanion extends UpdateCompanion<AiChatMessage> {
     this.contextKind = const Value.absent(),
     this.contextReferenceId = const Value.absent(),
     this.contextSummary = const Value.absent(),
+    this.toolCallsJson = const Value.absent(),
+    this.toolCallId = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -5122,6 +5216,8 @@ class AiChatMessagesCompanion extends UpdateCompanion<AiChatMessage> {
     Expression<String>? contextKind,
     Expression<String>? contextReferenceId,
     Expression<String>? contextSummary,
+    Expression<String>? toolCallsJson,
+    Expression<String>? toolCallId,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
     Expression<int>? rowid,
@@ -5140,6 +5236,8 @@ class AiChatMessagesCompanion extends UpdateCompanion<AiChatMessage> {
       if (contextReferenceId != null)
         'context_reference_id': contextReferenceId,
       if (contextSummary != null) 'context_summary': contextSummary,
+      if (toolCallsJson != null) 'tool_calls_json': toolCallsJson,
+      if (toolCallId != null) 'tool_call_id': toolCallId,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (rowid != null) 'rowid': rowid,
@@ -5159,6 +5257,8 @@ class AiChatMessagesCompanion extends UpdateCompanion<AiChatMessage> {
     Value<String?>? contextKind,
     Value<String?>? contextReferenceId,
     Value<String?>? contextSummary,
+    Value<String?>? toolCallsJson,
+    Value<String?>? toolCallId,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
     Value<int>? rowid,
@@ -5176,6 +5276,8 @@ class AiChatMessagesCompanion extends UpdateCompanion<AiChatMessage> {
       contextKind: contextKind ?? this.contextKind,
       contextReferenceId: contextReferenceId ?? this.contextReferenceId,
       contextSummary: contextSummary ?? this.contextSummary,
+      toolCallsJson: toolCallsJson ?? this.toolCallsJson,
+      toolCallId: toolCallId ?? this.toolCallId,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       rowid: rowid ?? this.rowid,
@@ -5221,6 +5323,12 @@ class AiChatMessagesCompanion extends UpdateCompanion<AiChatMessage> {
     if (contextSummary.present) {
       map['context_summary'] = Variable<String>(contextSummary.value);
     }
+    if (toolCallsJson.present) {
+      map['tool_calls_json'] = Variable<String>(toolCallsJson.value);
+    }
+    if (toolCallId.present) {
+      map['tool_call_id'] = Variable<String>(toolCallId.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
@@ -5248,6 +5356,8 @@ class AiChatMessagesCompanion extends UpdateCompanion<AiChatMessage> {
           ..write('contextKind: $contextKind, ')
           ..write('contextReferenceId: $contextReferenceId, ')
           ..write('contextSummary: $contextSummary, ')
+          ..write('toolCallsJson: $toolCallsJson, ')
+          ..write('toolCallId: $toolCallId, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('rowid: $rowid')
@@ -8564,6 +8674,8 @@ typedef $$AiChatMessagesTableCreateCompanionBuilder =
       Value<String?> contextKind,
       Value<String?> contextReferenceId,
       Value<String?> contextSummary,
+      Value<String?> toolCallsJson,
+      Value<String?> toolCallId,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
       Value<int> rowid,
@@ -8582,6 +8694,8 @@ typedef $$AiChatMessagesTableUpdateCompanionBuilder =
       Value<String?> contextKind,
       Value<String?> contextReferenceId,
       Value<String?> contextSummary,
+      Value<String?> toolCallsJson,
+      Value<String?> toolCallId,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
       Value<int> rowid,
@@ -8679,6 +8793,16 @@ class $$AiChatMessagesTableFilterComposer
 
   ColumnFilters<String> get contextSummary => $composableBuilder(
     column: $table.contextSummary,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get toolCallsJson => $composableBuilder(
+    column: $table.toolCallsJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get toolCallId => $composableBuilder(
+    column: $table.toolCallId,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -8780,6 +8904,16 @@ class $$AiChatMessagesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get toolCallsJson => $composableBuilder(
+    column: $table.toolCallsJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get toolCallId => $composableBuilder(
+    column: $table.toolCallId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -8868,6 +9002,16 @@ class $$AiChatMessagesTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<String> get toolCallsJson => $composableBuilder(
+    column: $table.toolCallsJson,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get toolCallId => $composableBuilder(
+    column: $table.toolCallId,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
 
@@ -8940,6 +9084,8 @@ class $$AiChatMessagesTableTableManager
                 Value<String?> contextKind = const Value.absent(),
                 Value<String?> contextReferenceId = const Value.absent(),
                 Value<String?> contextSummary = const Value.absent(),
+                Value<String?> toolCallsJson = const Value.absent(),
+                Value<String?> toolCallId = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -8956,6 +9102,8 @@ class $$AiChatMessagesTableTableManager
                 contextKind: contextKind,
                 contextReferenceId: contextReferenceId,
                 contextSummary: contextSummary,
+                toolCallsJson: toolCallsJson,
+                toolCallId: toolCallId,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 rowid: rowid,
@@ -8974,6 +9122,8 @@ class $$AiChatMessagesTableTableManager
                 Value<String?> contextKind = const Value.absent(),
                 Value<String?> contextReferenceId = const Value.absent(),
                 Value<String?> contextSummary = const Value.absent(),
+                Value<String?> toolCallsJson = const Value.absent(),
+                Value<String?> toolCallId = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -8990,6 +9140,8 @@ class $$AiChatMessagesTableTableManager
                 contextKind: contextKind,
                 contextReferenceId: contextReferenceId,
                 contextSummary: contextSummary,
+                toolCallsJson: toolCallsJson,
+                toolCallId: toolCallId,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 rowid: rowid,

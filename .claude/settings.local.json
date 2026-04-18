@@ -19,7 +19,8 @@
       "Bash(powershell.exe -Command \"python D:/tmp/query_db.py\")",
       "Bash(powershell.exe -Command \"python D:/tmp/query_db2.py\")",
       "Bash(powershell.exe -Command \"python D:/tmp/query_db3.py\")",
-      "Bash(grep -v \"def\\\\|//\")"
+      "Bash(grep -v \"def\\\\|//\")",
+      "Bash(flutter analyze *)"
     ]
   }
 }

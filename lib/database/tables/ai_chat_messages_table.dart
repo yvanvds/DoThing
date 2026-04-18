@@ -28,6 +28,10 @@ class AiChatMessages extends Table {
 
   TextColumn get contextSummary => text().nullable()();
 
+  TextColumn get toolCallsJson => text().nullable()();
+
+  TextColumn get toolCallId => text().nullable()();
+
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
 
   DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();

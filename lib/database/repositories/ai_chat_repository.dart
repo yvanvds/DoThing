@@ -1,5 +1,8 @@
+import 'dart:convert';
+
 import 'package:drift/drift.dart';
 
+import '../../agent/executor/tool_call.dart';
 import '../../models/ai/ai_chat_models.dart';
 import '../app_database.dart';
 
@@ -86,6 +89,8 @@ class AiChatRepository {
         contextKind: Value(message.requestContext?.kind),
         contextReferenceId: Value(message.requestContext?.referenceId),
         contextSummary: Value(message.requestContext?.summary),
+        toolCallsJson: Value(_encodeToolCalls(message.toolCalls)),
+        toolCallId: Value(message.toolCallId),
         createdAt: Value(message.createdAt),
         updatedAt: Value(DateTime.now()),
       ),
@@ -157,7 +162,37 @@ class AiChatRepository {
       providerMessageId: row.providerMessageId,
       parentMessageId: row.parentMessageId,
       requestContext: context,
+      toolCalls: _decodeToolCalls(row.toolCallsJson),
+      toolCallId: row.toolCallId,
     );
+  }
+
+  String? _encodeToolCalls(List<ToolCall>? toolCalls) {
+    if (toolCalls == null || toolCalls.isEmpty) {
+      return null;
+    }
+    return jsonEncode(toolCalls.map((c) => c.toJson()).toList());
+  }
+
+  List<ToolCall>? _decodeToolCalls(String? raw) {
+    if (raw == null || raw.isEmpty) {
+      return null;
+    }
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) {
+        return null;
+      }
+      final calls = <ToolCall>[];
+      for (final entry in decoded) {
+        if (entry is Map) {
+          calls.add(ToolCall.fromJson(Map<String, Object?>.from(entry)));
+        }
+      }
+      return calls.isEmpty ? null : calls;
+    } catch (_) {
+      return null;
+    }
   }
 
   String _roleToDb(AiMessageRole role) => role.name;

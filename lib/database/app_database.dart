@@ -66,7 +66,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -78,6 +78,14 @@ class AppDatabase extends _$AppDatabase {
       if (from < 6) {
         await customStatement(
           'ALTER TABLE contact_identities ADD COLUMN avatar_fetch_state TEXT',
+        );
+      }
+      if (from < 7) {
+        await customStatement(
+          'ALTER TABLE ai_chat_messages ADD COLUMN tool_calls_json TEXT',
+        );
+        await customStatement(
+          'ALTER TABLE ai_chat_messages ADD COLUMN tool_call_id TEXT',
         );
       }
     },

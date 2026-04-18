@@ -1,4 +1,6 @@
-enum AiMessageRole { system, user, assistant }
+import '../../agent/executor/tool_call.dart';
+
+enum AiMessageRole { system, user, assistant, tool }
 
 enum AiMessageStatus { queued, waiting, streaming, completed, canceled, failed }
 
@@ -56,6 +58,8 @@ class AiChatMessageModel {
     this.providerMessageId,
     this.requestContext,
     this.parentMessageId,
+    this.toolCalls,
+    this.toolCallId,
   });
 
   final String id;
@@ -69,6 +73,14 @@ class AiChatMessageModel {
   final AiRequestContext? requestContext;
   final String? parentMessageId;
 
+  /// Tool calls the assistant requested on this turn. Only set for
+  /// [AiMessageRole.assistant] messages; null otherwise.
+  final List<ToolCall>? toolCalls;
+
+  /// The id of the tool call this message is a result for. Only set for
+  /// [AiMessageRole.tool] messages; null otherwise.
+  final String? toolCallId;
+
   bool get isTerminal {
     return status == AiMessageStatus.completed ||
         status == AiMessageStatus.canceled ||
@@ -81,6 +93,9 @@ class AiChatMessageModel {
     AiErrorState? error,
     bool clearError = false,
     String? providerMessageId,
+    List<ToolCall>? toolCalls,
+    bool clearToolCalls = false,
+    String? toolCallId,
   }) {
     return AiChatMessageModel(
       id: id,
@@ -93,6 +108,8 @@ class AiChatMessageModel {
       providerMessageId: providerMessageId ?? this.providerMessageId,
       requestContext: requestContext,
       parentMessageId: parentMessageId,
+      toolCalls: clearToolCalls ? null : (toolCalls ?? this.toolCalls),
+      toolCallId: toolCallId ?? this.toolCallId,
     );
   }
 }
