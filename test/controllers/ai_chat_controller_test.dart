@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:do_thing/agent/tools/tool_descriptor.dart';
+import 'package:do_thing/agent/tools/tool_registry.dart';
 import 'package:do_thing/controllers/ai/ai_chat_controller.dart';
 import 'package:do_thing/controllers/ai/ai_settings_controller.dart';
 import 'package:do_thing/controllers/status_controller.dart';
@@ -76,6 +78,9 @@ void main() {
             ),
           ),
           aiChatTransportProvider.overrideWithValue(transport),
+          toolRegistryProvider.overrideWithValue(
+            ToolRegistry(const <ToolDescriptor>[]),
+          ),
         ],
       );
       addTearDown(container.dispose);
@@ -120,6 +125,9 @@ void main() {
             ),
           ),
           aiChatTransportProvider.overrideWithValue(transport),
+          toolRegistryProvider.overrideWithValue(
+            ToolRegistry(const <ToolDescriptor>[]),
+          ),
         ],
       );
       addTearDown(container.dispose);
@@ -157,6 +165,9 @@ void main() {
               ),
             ),
             aiChatTransportProvider.overrideWithValue(transport),
+            toolRegistryProvider.overrideWithValue(
+              ToolRegistry(const <ToolDescriptor>[]),
+            ),
           ],
         );
         addTearDown(container.dispose);
@@ -208,6 +219,9 @@ void main() {
             ),
           ),
           aiChatTransportProvider.overrideWithValue(transport),
+          toolRegistryProvider.overrideWithValue(
+            ToolRegistry(const <ToolDescriptor>[]),
+          ),
         ],
       );
       addTearDown(container.dispose);
@@ -247,6 +261,9 @@ void main() {
             ),
           ),
           aiChatTransportProvider.overrideWithValue(transport),
+          toolRegistryProvider.overrideWithValue(
+            ToolRegistry(const <ToolDescriptor>[]),
+          ),
         ],
       );
       addTearDown(container.dispose);
@@ -289,6 +306,9 @@ void main() {
             ),
           ),
           aiChatTransportProvider.overrideWithValue(transport),
+          toolRegistryProvider.overrideWithValue(
+            ToolRegistry(const <ToolDescriptor>[]),
+          ),
         ],
       );
       addTearDown(container.dispose);
@@ -344,6 +364,9 @@ void main() {
             ),
           ),
           aiChatTransportProvider.overrideWithValue(transport),
+          toolRegistryProvider.overrideWithValue(
+            ToolRegistry(const <ToolDescriptor>[]),
+          ),
         ],
       );
       addTearDown(container.dispose);
@@ -373,6 +396,9 @@ void main() {
             ),
           ),
           aiChatTransportProvider.overrideWithValue(transport),
+          toolRegistryProvider.overrideWithValue(
+            ToolRegistry(const <ToolDescriptor>[]),
+          ),
         ],
       );
       addTearDown(container.dispose);
@@ -438,6 +464,9 @@ void main() {
             ),
           ),
           aiChatTransportProvider.overrideWithValue(transport),
+          toolRegistryProvider.overrideWithValue(
+            ToolRegistry(const <ToolDescriptor>[]),
+          ),
         ],
       );
       addTearDown(container.dispose);
@@ -481,6 +510,9 @@ void main() {
               ),
             ),
             aiChatTransportProvider.overrideWithValue(transport),
+            toolRegistryProvider.overrideWithValue(
+              ToolRegistry(const <ToolDescriptor>[]),
+            ),
           ],
         );
         addTearDown(container.dispose);

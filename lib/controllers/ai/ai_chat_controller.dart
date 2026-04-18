@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_chat_core/flutter_chat_core.dart' as chat;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../agent/orchestrator/agent_orchestrator_controller.dart';
 import '../../controllers/chat_controller.dart';
 import '../../controllers/status_controller.dart';
 import '../../models/ai/ai_chat_models.dart';
@@ -78,6 +79,10 @@ class AiChatController extends AsyncNotifier<AiChatUiState> {
 
     final chatController = ref.read(chatControllerProvider);
     await chatController.setMessages(const <chat.Message>[], animated: false);
+
+    ref
+        .read(agentOrchestratorControllerProvider.notifier)
+        .bindConversation(conversationId);
 
     ref.onDispose(_cancelActiveStream);
 
@@ -185,6 +190,27 @@ class AiChatController extends AsyncNotifier<AiChatUiState> {
     );
 
     final history = await repository.listMessages(conversationId);
+
+    final orchestrator = ref.read(
+      agentOrchestratorControllerProvider.notifier,
+    );
+    final plannerHistory = history
+        .where((m) => m.id != assistantMessage.id)
+        .toList(growable: false);
+    final plannerOutcome = await orchestrator.planTurn(
+      conversationId: conversationId,
+      prompt: prompt,
+      history: plannerHistory,
+    );
+
+    if (plannerOutcome.preamble.isNotEmpty) {
+      _streamingBuffer = plannerOutcome.preamble;
+      await _upsertAssistantProgress(
+        conversationId: conversationId,
+        status: AiMessageStatus.streaming,
+      );
+    }
+
     final requestMessages = history
         .where(
           (m) =>
@@ -312,6 +338,10 @@ class AiChatController extends AsyncNotifier<AiChatUiState> {
     );
 
     ref
+        .read(agentOrchestratorControllerProvider.notifier)
+        .markTurnFinished();
+
+    ref
         .read(statusProvider.notifier)
         .add(StatusEntryType.warning, 'AI response canceled.');
 
@@ -366,6 +396,10 @@ class AiChatController extends AsyncNotifier<AiChatUiState> {
           clearActiveAssistantMessageId: true,
         ),
       );
+
+      ref
+          .read(agentOrchestratorControllerProvider.notifier)
+          .markTurnFinished();
 
       _activeAssistantId = null;
       _activePrompt = null;
@@ -445,6 +479,10 @@ class AiChatController extends AsyncNotifier<AiChatUiState> {
     }
 
     ref
+        .read(agentOrchestratorControllerProvider.notifier)
+        .markTurnFinished();
+
+    ref
         .read(statusProvider.notifier)
         .add(StatusEntryType.error, 'AI request failed: ${error.message}');
 
@@ -486,6 +524,10 @@ class AiChatController extends AsyncNotifier<AiChatUiState> {
     await ref
         .read(chatControllerProvider)
         .setMessages(uiMessages, animated: false);
+
+    ref
+        .read(agentOrchestratorControllerProvider.notifier)
+        .bindConversation(conversationId);
 
     final current = state.asData?.value;
     if (current == null) {
