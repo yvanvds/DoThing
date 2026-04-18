@@ -300,4 +300,76 @@ void main() {
       expect(results.any((r) => r.messageId == row!.id), isTrue);
     });
   });
+
+  group('SmartschoolSyncRepository.discardMessage', () {
+    test('removes the message row by external ID', () async {
+      final db = AppDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+      final repo = SmartschoolSyncRepository(db);
+
+      await repo.syncHeaders(
+        [_header(id: 300, unread: false)],
+        mailbox: 'sent',
+      );
+      final before = await db.messagesDao.findMessage(
+        source: 'smartschool',
+        externalId: '300',
+      );
+      expect(before, isNotNull);
+
+      await repo.discardMessage(300);
+
+      final after = await db.messagesDao.findMessage(
+        source: 'smartschool',
+        externalId: '300',
+      );
+      expect(after, isNull);
+    });
+
+    test('also removes participant rows for the discarded message', () async {
+      final db = AppDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+      final repo = SmartschoolSyncRepository(db);
+
+      await repo.syncHeaders(
+        [_header(id: 301, unread: false)],
+        mailbox: 'sent',
+      );
+      await repo.syncDetail(
+        const SmartschoolMessageDetail(
+          id: 301,
+          from: 'Yvan',
+          subject: 'Self-sent',
+          body: '<p>Test</p>',
+          date: '2026-04-10T12:00:00Z',
+          receivers: [SmartschoolMessageRecipient(displayName: 'Recipient', userId: 55)],
+          replyAllToRecipients: [
+            SmartschoolMessageRecipient(displayName: 'Recipient', userId: 55),
+          ],
+        ),
+      );
+
+      final row = await db.messagesDao.findMessage(
+        source: 'smartschool',
+        externalId: '301',
+      );
+      final participantsBefore = await db.messagesDao.getParticipants(row!.id);
+      expect(participantsBefore, isNotEmpty);
+
+      await repo.discardMessage(301);
+
+      // Message is gone; participant query on the old local ID returns nothing.
+      final participantsAfter = await db.messagesDao.getParticipants(row.id);
+      expect(participantsAfter, isEmpty);
+    });
+
+    test('is a no-op for an unknown external ID', () async {
+      final db = AppDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+      final repo = SmartschoolSyncRepository(db);
+
+      // Should not throw.
+      await repo.discardMessage(99999);
+    });
+  });
 }

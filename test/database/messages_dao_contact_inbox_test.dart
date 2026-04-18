@@ -43,7 +43,7 @@ Future<int> _insertIdentity(
 void main() {
   group('MessagesDao contact inbox queries', () {
     test(
-      'orders contacts by latest activity and aggregates any participant role',
+      'orders contacts by latest activity (inbox=sender, sent=to)',
       () async {
         final db = AppDatabase(NativeDatabase.memory());
         addTearDown(db.close);
@@ -132,10 +132,11 @@ void main() {
 
         final summaries = await db.messagesDao.getInboxContactSummaries();
 
-        // Alice is newest (m3 at 12:00), Bob at 11:00.
+        // Only sender (inbox) role counts. Alice is sender in m3 only;
+        // Bob is sender in m1 and m2 (m4 excluded — deleted).
         expect(summaries.map((s) => s.displayName), ['Alice', 'Bob']);
-        expect(summaries.first.itemCount, 3); // m1, m2, m3
-        expect(summaries.first.unreadCount, 1); // m2
+        expect(summaries.first.itemCount, 1); // m3 only (Alice as sender)
+        expect(summaries.first.unreadCount, 0); // m3 is read
         expect(
           summaries.first.latestActivityAt.toUtc().toIso8601String(),
           '2026-04-10T12:00:00.000Z',
@@ -155,12 +156,15 @@ void main() {
         externalId: 'user:10',
       );
 
+      // 2001: sent message with Alice as 'to' (visible under sent=to rule)
       final oldId = await _insertMessage(
         db,
         externalId: '2001',
+        mailbox: 'sent',
         receivedAt: DateTime.parse('2026-04-10T08:00:00Z'),
         isRead: true,
       );
+      // 2002: inbox message with Alice as sender (visible under inbox=sender rule)
       final newId = await _insertMessage(
         db,
         externalId: '2002',

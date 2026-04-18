@@ -1035,6 +1035,9 @@ class Office365MailService {
     }).toList();
   }
 
+  /// Returns a valid access token, refreshing if needed. Throws if not authenticated.
+  Future<String> ensureValidAccessToken() => _ensureValidAccessToken();
+
   Future<String> _ensureValidAccessToken() async {
     final settings = await ref.read(office365SettingsProvider.future);
     _validateSettings(settings);

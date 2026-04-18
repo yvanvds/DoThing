@@ -35,6 +35,8 @@ abstract class SmartschoolMessagesApi {
   });
   Future<(List<MessageSearchUser>, List<MessageSearchUser>)>
   getReplyAllRecipients(int messageId, {required BoxType boxType});
+  Future<(List<MessageSearchUser>, List<MessageSearchUser>)>
+  getSentMessageRecipients(int messageId);
   Future<List<dynamic>> getAttachments(int messageId);
   Future<void> markRead(int messageId);
   Future<void> markUnread(int messageId);
@@ -103,6 +105,11 @@ class _SmartschoolMessagesServiceAdapter implements SmartschoolMessagesApi {
   Future<(List<MessageSearchUser>, List<MessageSearchUser>)>
   getReplyAllRecipients(int messageId, {required BoxType boxType}) =>
       _service.getReplyAllRecipients(messageId, boxType: boxType);
+
+  @override
+  Future<(List<MessageSearchUser>, List<MessageSearchUser>)>
+  getSentMessageRecipients(int messageId) =>
+      _service.getSentMessageRecipients(messageId);
 
   @override
   Future<List<dynamic>> getAttachments(int messageId) =>
@@ -302,12 +309,22 @@ class SmartschoolBridge {
       if (detail == null) return const [];
       List<MessageSearchUser> replyAllTo = const [];
       List<MessageSearchUser> replyAllCc = const [];
-      try {
-        (replyAllTo, replyAllCc) = await _messages.getReplyAllRecipients(
-          messageId,
-          boxType: mappedBoxType,
-        );
-      } catch (_) {}
+      if (mappedBoxType == BoxType.sent) {
+        try {
+          (replyAllTo, replyAllCc) = await _messages.getSentMessageRecipients(
+            messageId,
+          );
+        } catch (_) {}
+        // Empty means self-sent; caller will discard the DB row.
+        if (replyAllTo.isEmpty && replyAllCc.isEmpty) return const [];
+      } else {
+        try {
+          (replyAllTo, replyAllCc) = await _messages.getReplyAllRecipients(
+            messageId,
+            boxType: mappedBoxType,
+          );
+        } catch (_) {}
+      }
       return [
         _toDetail(detail, replyAllTo: replyAllTo, replyAllCc: replyAllCc),
       ];
@@ -596,7 +613,8 @@ class SmartschoolBridge {
   }
 
   SmartschoolMessageRecipient _toRecipient(String name) {
-    return SmartschoolMessageRecipient(displayName: name.trim());
+    final cleaned = name.trim().replaceFirst(RegExp(r'^[+\-]'), '').trim();
+    return SmartschoolMessageRecipient(displayName: cleaned);
   }
 
   SmartschoolMessageRecipient _toResolvedRecipient(MessageSearchUser user) {

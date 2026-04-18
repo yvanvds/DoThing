@@ -4,7 +4,22 @@
       "Bash(xargs grep *)",
       "Bash(dart run *)",
       "Bash(flutter test *)",
-      "Bash(dart analyze *)"
+      "Bash(dart analyze *)",
+      "Bash(where sqlite3 *)",
+      "Read(//c/Users/yvan/AppData/Local/Programs/**)",
+      "Bash(python3 -c ' *)",
+      "Bash(\"/c/Users/yvan/AppData/Local/Programs/Python/Python313/python.exe\" -c \" import sqlite3 conn = sqlite3.connect\\('C:/Users/yvan/AppData/Roaming/DoThing/do_thing_messages.sqlite'\\) cur = conn.cursor\\(\\) cur.execute\\(\\\\\"SELECT name FROM sqlite_master WHERE type='table' ORDER BY name\\\\\"\\) print\\([r[0] for r in cur.fetchall\\(\\)]\\) \")",
+      "Read(//c/Users/yvan/AppData/Local/**)",
+      "Bash(powershell.exe -Command ' *)",
+      "Bash(powershell.exe -Command \"python --version\")",
+      "Bash(powershell.exe -Command 'python -c \" *)",
+      "Bash(cat)",
+      "Bash(powershell.exe -Command \"python /tmp/query_db.py\")",
+      "Bash(mkdir -p /d/tmp)",
+      "Bash(powershell.exe -Command \"python D:/tmp/query_db.py\")",
+      "Bash(powershell.exe -Command \"python D:/tmp/query_db2.py\")",
+      "Bash(powershell.exe -Command \"python D:/tmp/query_db3.py\")",
+      "Bash(grep -v \"def\\\\|//\")"
     ]
   }
 }

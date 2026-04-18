@@ -201,7 +201,15 @@ class MessagesDao extends DatabaseAccessor<AppDatabase>
             ci2.contact_id = ci.contact_id AND
             ci2.avatar_url IS NOT NULL AND
             TRIM(ci2.avatar_url) <> ''
-          ORDER BY ci2.last_seen_at DESC
+          ORDER BY
+            CASE
+              WHEN ci2.source = 'smartschool'
+                   AND ci2.avatar_url NOT LIKE '%/initials_%' THEN 0
+              WHEN ci2.source = 'outlook' THEN 1
+              WHEN ci2.source = 'smartschool' THEN 2
+              ELSE 3
+            END ASC,
+            ci2.last_seen_at DESC
           LIMIT 1
         ) AS avatar_url,
         MAX(m.received_at) AS latest_activity_at,
@@ -212,9 +220,12 @@ class MessagesDao extends DatabaseAccessor<AppDatabase>
       JOIN messages m ON m.id = mp.message_id
       JOIN contacts c ON c.id = ci.contact_id
       WHERE
-        m.mailbox IN ('inbox', 'sent') AND
         m.is_deleted = 0 AND
-        m.is_archived = 0
+        m.is_archived = 0 AND
+        (
+          (m.mailbox = 'inbox' AND mp.role = 'sender') OR
+          (m.mailbox = 'sent'  AND mp.role = 'to')
+        )
         $sourceClause
       GROUP BY ci.contact_id
       ORDER BY latest_activity_at DESC, c.display_name COLLATE NOCASE ASC
@@ -299,9 +310,12 @@ class MessagesDao extends DatabaseAccessor<AppDatabase>
       JOIN messages m ON m.id = mp.message_id
       WHERE
         ci.contact_id = ? AND
-        m.mailbox IN ('inbox', 'sent') AND
         m.is_deleted = 0 AND
-        m.is_archived = 0
+        m.is_archived = 0 AND
+        (
+          (m.mailbox = 'inbox' AND mp.role = 'sender') OR
+          (m.mailbox = 'sent'  AND mp.role = 'to')
+        )
         $sourceClause
         $selfFilterClause
       ORDER BY m.received_at DESC, m.id DESC
@@ -373,6 +387,19 @@ class MessagesDao extends DatabaseAccessor<AppDatabase>
 
     return rows.map((row) => row.read<int>('contact_id')).toSet();
   }
+
+  Future<void> deleteMessageById(int id) => transaction(() async {
+    await customStatement('DELETE FROM message_fts WHERE rowid = ?', [id]);
+    await (delete(messageParticipants)..where(
+          (t) => t.messageId.equals(id),
+        ))
+        .go();
+    await (delete(attachedDatabase.messageAttachments)..where(
+          (t) => t.messageId.equals(id),
+        ))
+        .go();
+    await (delete(messages)..where((t) => t.id.equals(id))).go();
+  });
 
   /// Hard-delete messages for [source]/[mailbox] not in [activeExternalIds].
   Future<int> deleteStaleMessages({

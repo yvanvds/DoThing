@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -798,17 +799,17 @@ class _ContactTileState extends State<_ContactTile> {
                 CircleAvatar(
                   radius: 16,
                   backgroundColor: colorScheme.surfaceContainerHighest,
-                  foregroundImage: hasAvatar ? NetworkImage(avatarUrl) : null,
-                  child: hasAvatar
-                      ? null
-                      : Text(
-                          _initial(widget.contact.displayName),
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: colorScheme.onSurfaceVariant,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
+                  foregroundImage: hasAvatar
+                      ? _avatarImageProvider(avatarUrl)
+                      : null,
+                  child: Text(
+                    _initial(widget.contact.displayName),
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: colorScheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -939,6 +940,13 @@ class _ContactTileState extends State<_ContactTile> {
         .findAncestorStateOfType<_SmartschoolMessageListState>();
     if (state == null) return false;
     return state._newMessageKeys.contains('${header.source}:${header.id}');
+  }
+
+  ImageProvider _avatarImageProvider(String url) {
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      return NetworkImage(url);
+    }
+    return FileImage(File(url));
   }
 
   String _initial(String value) {

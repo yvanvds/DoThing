@@ -271,7 +271,10 @@ class SmartschoolInboxController extends AsyncNotifier<int> {
     }
 
     // Eagerly fetch full detail for newly inserted messages to resolve identities.
-    await _syncDetailForHeaders(newlyInserted, status, syncRepo);
+    await _syncDetailForHeaders(newlyInserted, status, syncRepo, boxType: SmartschoolBoxType.inbox);
+
+    // Backfill avatars for any contacts without one (fire-and-forget).
+    ref.read(avatarSyncServiceProvider).scheduleSync();
 
     // Initialize polling with the seen message IDs
     final messageIds = headers.map((h) => h.id).toList();
@@ -311,7 +314,7 @@ class SmartschoolInboxController extends AsyncNotifier<int> {
         'Smartschool sent sync: ${sentHeaders.length} headers scanned · ${newlySent.length} new/updated$removedSuffix.',
       );
 
-      await _syncDetailForHeaders(newlySent, status, syncRepository);
+      await _syncDetailForHeaders(newlySent, status, syncRepository, boxType: SmartschoolBoxType.sent);
     } catch (error) {
       status.add(StatusEntryType.warning, 'Sent bootstrap failed: $error');
     }
@@ -362,7 +365,7 @@ class SmartschoolInboxController extends AsyncNotifier<int> {
       );
     }
 
-    await _syncDetailForHeaders(newlyInsertedThreads, status, syncRepo);
+    await _syncDetailForHeaders(newlyInsertedThreads, status, syncRepo, boxType: SmartschoolBoxType.inbox);
 
     // Initialize polling with all seen message IDs across threads
     final messageIds = threads
@@ -378,39 +381,75 @@ class SmartschoolInboxController extends AsyncNotifier<int> {
   Future<void> _syncDetailForHeaders(
     List<SmartschoolMessageHeader> headers,
     StatusController status,
-    SmartschoolSyncRepository syncRepo,
-  ) async {
+    SmartschoolSyncRepository syncRepo, {
+    required SmartschoolBoxType boxType,
+  }) async {
     if (headers.isEmpty) return;
     final mc = ref.read(smartschoolMessagesProvider.notifier);
+    final label = boxType == SmartschoolBoxType.sent ? 'sent' : 'inbox';
+    status.add(
+      StatusEntryType.info,
+      'Fetching detail for ${headers.length} new $label messages…',
+    );
+
+    int noDetail = 0;
     int failed = 0;
+
     for (final header in headers) {
       try {
-        final boxType = _boxTypeFromRealBox(header.realBox);
         final details = await mc.getMessage(
           header.id,
           boxType: boxType,
           reportStatus: false,
         );
-        if (details.isNotEmpty) await syncRepo.syncDetail(details.first);
-      } catch (_) {
+        if (details.isEmpty) {
+          if (boxType == SmartschoolBoxType.sent) {
+            await syncRepo.discardMessage(header.id);
+            status.add(
+              StatusEntryType.info,
+              '[$label] "${header.subject}": self-sent, discarded.',
+            );
+          } else {
+            noDetail++;
+            status.add(
+              StatusEntryType.warning,
+              '[$label] "${header.subject}": no detail returned.',
+            );
+          }
+        } else {
+          final result = await syncRepo.syncDetail(details.first);
+          final senderMark = result.senderResolved ? '✓' : '✗';
+          final toSummary = result.toNames.isEmpty
+              ? 'no recipients'
+              : '${result.toNames.take(3).map((n) => n.isEmpty ? '?' : n).join(', ')}'
+                    '${result.toNames.length > 3 ? ' +${result.toNames.length - 3}' : ''}'
+                    ' (${result.toResolved}/${result.toNames.length} resolved)';
+          status.add(
+            result.toResolved < result.toNames.length
+                ? StatusEntryType.warning
+                : StatusEntryType.info,
+            '[$label] "${header.subject}": sender=${result.senderName} $senderMark · to: $toSummary.',
+          );
+        }
+      } catch (e) {
         failed++;
+        status.add(
+          StatusEntryType.warning,
+          '[$label] "${header.subject}": failed — $e.',
+        );
       }
     }
-    if (failed > 0) {
-      status.add(
-        StatusEntryType.warning,
-        'Could not resolve participants for $failed/${headers.length} new messages — they will be visible once opened.',
-      );
-    }
-  }
 
-  static SmartschoolBoxType _boxTypeFromRealBox(String realBox) =>
-      switch (realBox.trim().toLowerCase()) {
-        'sent' => SmartschoolBoxType.sent,
-        'draft' => SmartschoolBoxType.draft,
-        'trash' => SmartschoolBoxType.trash,
-        _ => SmartschoolBoxType.inbox,
-      };
+    final summaryParts = <String>[
+      if (noDetail > 0) '$noDetail no detail',
+      if (failed > 0) '$failed failed',
+    ];
+    status.add(
+      summaryParts.isEmpty ? StatusEntryType.info : StatusEntryType.warning,
+      'Detail sync $label complete'
+          '${summaryParts.isEmpty ? '' : ': ${summaryParts.join(' · ')}'}.',
+    );
+  }
 
   int _unreadCountFromHeaders(List<SmartschoolMessageHeader> headers) {
     // header.unread is already corrected (inverted) in SmartschoolMessageHeader.fromJson.

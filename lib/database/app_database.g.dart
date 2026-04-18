@@ -354,6 +354,17 @@ class $ContactIdentitiesTable extends ContactIdentities
     requiredDuringInsert: false,
     defaultValue: currentDateAndTime,
   );
+  static const VerificationMeta _avatarFetchStateMeta = const VerificationMeta(
+    'avatarFetchState',
+  );
+  @override
+  late final GeneratedColumn<String> avatarFetchState = GeneratedColumn<String>(
+    'avatar_fetch_state',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -364,6 +375,7 @@ class $ContactIdentitiesTable extends ContactIdentities
     avatarUrl,
     lastSeenAt,
     updatedAt,
+    avatarFetchState,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -436,6 +448,15 @@ class $ContactIdentitiesTable extends ContactIdentities
         updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
       );
     }
+    if (data.containsKey('avatar_fetch_state')) {
+      context.handle(
+        _avatarFetchStateMeta,
+        avatarFetchState.isAcceptableOrUnknown(
+          data['avatar_fetch_state']!,
+          _avatarFetchStateMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -481,6 +502,10 @@ class $ContactIdentitiesTable extends ContactIdentities
         DriftSqlType.dateTime,
         data['${effectivePrefix}updated_at'],
       )!,
+      avatarFetchState: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}avatar_fetch_state'],
+      ),
     );
   }
 
@@ -507,6 +532,10 @@ class ContactIdentity extends DataClass implements Insertable<ContactIdentity> {
   final String? avatarUrl;
   final DateTime lastSeenAt;
   final DateTime updatedAt;
+
+  /// Tracks photo-fetch state for provider-fetched avatars (Outlook only).
+  /// null = not yet attempted; 'none' = checked, no photo available (do not retry).
+  final String? avatarFetchState;
   const ContactIdentity({
     required this.id,
     required this.contactId,
@@ -516,6 +545,7 @@ class ContactIdentity extends DataClass implements Insertable<ContactIdentity> {
     this.avatarUrl,
     required this.lastSeenAt,
     required this.updatedAt,
+    this.avatarFetchState,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -532,6 +562,9 @@ class ContactIdentity extends DataClass implements Insertable<ContactIdentity> {
     }
     map['last_seen_at'] = Variable<DateTime>(lastSeenAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
+    if (!nullToAbsent || avatarFetchState != null) {
+      map['avatar_fetch_state'] = Variable<String>(avatarFetchState);
+    }
     return map;
   }
 
@@ -549,6 +582,9 @@ class ContactIdentity extends DataClass implements Insertable<ContactIdentity> {
           : Value(avatarUrl),
       lastSeenAt: Value(lastSeenAt),
       updatedAt: Value(updatedAt),
+      avatarFetchState: avatarFetchState == null && nullToAbsent
+          ? const Value.absent()
+          : Value(avatarFetchState),
     );
   }
 
@@ -566,6 +602,7 @@ class ContactIdentity extends DataClass implements Insertable<ContactIdentity> {
       avatarUrl: serializer.fromJson<String?>(json['avatarUrl']),
       lastSeenAt: serializer.fromJson<DateTime>(json['lastSeenAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+      avatarFetchState: serializer.fromJson<String?>(json['avatarFetchState']),
     );
   }
   @override
@@ -580,6 +617,7 @@ class ContactIdentity extends DataClass implements Insertable<ContactIdentity> {
       'avatarUrl': serializer.toJson<String?>(avatarUrl),
       'lastSeenAt': serializer.toJson<DateTime>(lastSeenAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
+      'avatarFetchState': serializer.toJson<String?>(avatarFetchState),
     };
   }
 
@@ -592,6 +630,7 @@ class ContactIdentity extends DataClass implements Insertable<ContactIdentity> {
     Value<String?> avatarUrl = const Value.absent(),
     DateTime? lastSeenAt,
     DateTime? updatedAt,
+    Value<String?> avatarFetchState = const Value.absent(),
   }) => ContactIdentity(
     id: id ?? this.id,
     contactId: contactId ?? this.contactId,
@@ -601,6 +640,9 @@ class ContactIdentity extends DataClass implements Insertable<ContactIdentity> {
     avatarUrl: avatarUrl.present ? avatarUrl.value : this.avatarUrl,
     lastSeenAt: lastSeenAt ?? this.lastSeenAt,
     updatedAt: updatedAt ?? this.updatedAt,
+    avatarFetchState: avatarFetchState.present
+        ? avatarFetchState.value
+        : this.avatarFetchState,
   );
   ContactIdentity copyWithCompanion(ContactIdentitiesCompanion data) {
     return ContactIdentity(
@@ -618,6 +660,9 @@ class ContactIdentity extends DataClass implements Insertable<ContactIdentity> {
           ? data.lastSeenAt.value
           : this.lastSeenAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      avatarFetchState: data.avatarFetchState.present
+          ? data.avatarFetchState.value
+          : this.avatarFetchState,
     );
   }
 
@@ -631,7 +676,8 @@ class ContactIdentity extends DataClass implements Insertable<ContactIdentity> {
           ..write('displayName: $displayName, ')
           ..write('avatarUrl: $avatarUrl, ')
           ..write('lastSeenAt: $lastSeenAt, ')
-          ..write('updatedAt: $updatedAt')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('avatarFetchState: $avatarFetchState')
           ..write(')'))
         .toString();
   }
@@ -646,6 +692,7 @@ class ContactIdentity extends DataClass implements Insertable<ContactIdentity> {
     avatarUrl,
     lastSeenAt,
     updatedAt,
+    avatarFetchState,
   );
   @override
   bool operator ==(Object other) =>
@@ -658,7 +705,8 @@ class ContactIdentity extends DataClass implements Insertable<ContactIdentity> {
           other.displayName == this.displayName &&
           other.avatarUrl == this.avatarUrl &&
           other.lastSeenAt == this.lastSeenAt &&
-          other.updatedAt == this.updatedAt);
+          other.updatedAt == this.updatedAt &&
+          other.avatarFetchState == this.avatarFetchState);
 }
 
 class ContactIdentitiesCompanion extends UpdateCompanion<ContactIdentity> {
@@ -670,6 +718,7 @@ class ContactIdentitiesCompanion extends UpdateCompanion<ContactIdentity> {
   final Value<String?> avatarUrl;
   final Value<DateTime> lastSeenAt;
   final Value<DateTime> updatedAt;
+  final Value<String?> avatarFetchState;
   const ContactIdentitiesCompanion({
     this.id = const Value.absent(),
     this.contactId = const Value.absent(),
@@ -679,6 +728,7 @@ class ContactIdentitiesCompanion extends UpdateCompanion<ContactIdentity> {
     this.avatarUrl = const Value.absent(),
     this.lastSeenAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
+    this.avatarFetchState = const Value.absent(),
   });
   ContactIdentitiesCompanion.insert({
     this.id = const Value.absent(),
@@ -689,6 +739,7 @@ class ContactIdentitiesCompanion extends UpdateCompanion<ContactIdentity> {
     this.avatarUrl = const Value.absent(),
     required DateTime lastSeenAt,
     this.updatedAt = const Value.absent(),
+    this.avatarFetchState = const Value.absent(),
   }) : contactId = Value(contactId),
        source = Value(source),
        externalId = Value(externalId),
@@ -702,6 +753,7 @@ class ContactIdentitiesCompanion extends UpdateCompanion<ContactIdentity> {
     Expression<String>? avatarUrl,
     Expression<DateTime>? lastSeenAt,
     Expression<DateTime>? updatedAt,
+    Expression<String>? avatarFetchState,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -712,6 +764,7 @@ class ContactIdentitiesCompanion extends UpdateCompanion<ContactIdentity> {
       if (avatarUrl != null) 'avatar_url': avatarUrl,
       if (lastSeenAt != null) 'last_seen_at': lastSeenAt,
       if (updatedAt != null) 'updated_at': updatedAt,
+      if (avatarFetchState != null) 'avatar_fetch_state': avatarFetchState,
     });
   }
 
@@ -724,6 +777,7 @@ class ContactIdentitiesCompanion extends UpdateCompanion<ContactIdentity> {
     Value<String?>? avatarUrl,
     Value<DateTime>? lastSeenAt,
     Value<DateTime>? updatedAt,
+    Value<String?>? avatarFetchState,
   }) {
     return ContactIdentitiesCompanion(
       id: id ?? this.id,
@@ -734,6 +788,7 @@ class ContactIdentitiesCompanion extends UpdateCompanion<ContactIdentity> {
       avatarUrl: avatarUrl ?? this.avatarUrl,
       lastSeenAt: lastSeenAt ?? this.lastSeenAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      avatarFetchState: avatarFetchState ?? this.avatarFetchState,
     );
   }
 
@@ -764,6 +819,9 @@ class ContactIdentitiesCompanion extends UpdateCompanion<ContactIdentity> {
     if (updatedAt.present) {
       map['updated_at'] = Variable<DateTime>(updatedAt.value);
     }
+    if (avatarFetchState.present) {
+      map['avatar_fetch_state'] = Variable<String>(avatarFetchState.value);
+    }
     return map;
   }
 
@@ -777,7 +835,8 @@ class ContactIdentitiesCompanion extends UpdateCompanion<ContactIdentity> {
           ..write('displayName: $displayName, ')
           ..write('avatarUrl: $avatarUrl, ')
           ..write('lastSeenAt: $lastSeenAt, ')
-          ..write('updatedAt: $updatedAt')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('avatarFetchState: $avatarFetchState')
           ..write(')'))
         .toString();
   }
@@ -5557,6 +5616,7 @@ typedef $$ContactIdentitiesTableCreateCompanionBuilder =
       Value<String?> avatarUrl,
       required DateTime lastSeenAt,
       Value<DateTime> updatedAt,
+      Value<String?> avatarFetchState,
     });
 typedef $$ContactIdentitiesTableUpdateCompanionBuilder =
     ContactIdentitiesCompanion Function({
@@ -5568,6 +5628,7 @@ typedef $$ContactIdentitiesTableUpdateCompanionBuilder =
       Value<String?> avatarUrl,
       Value<DateTime> lastSeenAt,
       Value<DateTime> updatedAt,
+      Value<String?> avatarFetchState,
     });
 
 final class $$ContactIdentitiesTableReferences
@@ -5674,6 +5735,11 @@ class $$ContactIdentitiesTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<String> get avatarFetchState => $composableBuilder(
+    column: $table.avatarFetchState,
+    builder: (column) => ColumnFilters(column),
+  );
+
   $$ContactsTableFilterComposer get contactId {
     final $$ContactsTableFilterComposer composer = $composerBuilder(
       composer: this,
@@ -5767,6 +5833,11 @@ class $$ContactIdentitiesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get avatarFetchState => $composableBuilder(
+    column: $table.avatarFetchState,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$ContactsTableOrderingComposer get contactId {
     final $$ContactsTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -5826,6 +5897,11 @@ class $$ContactIdentitiesTableAnnotationComposer
 
   GeneratedColumn<DateTime> get updatedAt =>
       $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<String> get avatarFetchState => $composableBuilder(
+    column: $table.avatarFetchState,
+    builder: (column) => column,
+  );
 
   $$ContactsTableAnnotationComposer get contactId {
     final $$ContactsTableAnnotationComposer composer = $composerBuilder(
@@ -5918,6 +5994,7 @@ class $$ContactIdentitiesTableTableManager
                 Value<String?> avatarUrl = const Value.absent(),
                 Value<DateTime> lastSeenAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
+                Value<String?> avatarFetchState = const Value.absent(),
               }) => ContactIdentitiesCompanion(
                 id: id,
                 contactId: contactId,
@@ -5927,6 +6004,7 @@ class $$ContactIdentitiesTableTableManager
                 avatarUrl: avatarUrl,
                 lastSeenAt: lastSeenAt,
                 updatedAt: updatedAt,
+                avatarFetchState: avatarFetchState,
               ),
           createCompanionCallback:
               ({
@@ -5938,6 +6016,7 @@ class $$ContactIdentitiesTableTableManager
                 Value<String?> avatarUrl = const Value.absent(),
                 required DateTime lastSeenAt,
                 Value<DateTime> updatedAt = const Value.absent(),
+                Value<String?> avatarFetchState = const Value.absent(),
               }) => ContactIdentitiesCompanion.insert(
                 id: id,
                 contactId: contactId,
@@ -5947,6 +6026,7 @@ class $$ContactIdentitiesTableTableManager
                 avatarUrl: avatarUrl,
                 lastSeenAt: lastSeenAt,
                 updatedAt: updatedAt,
+                avatarFetchState: avatarFetchState,
               ),
           withReferenceMapper: (p0) => p0
               .map(

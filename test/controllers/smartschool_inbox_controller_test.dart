@@ -257,6 +257,57 @@ void main() {
     );
 
     test(
+      'self-sent message from sent bootstrap is discarded and logged as info',
+      () async {
+        final db = AppDatabase(NativeDatabase.memory());
+        addTearDown(db.close);
+
+        // Inbox has one regular message; sent has one self-sent message.
+        final inboxHeaders = [_header(id: 400, unread: false)];
+        final sentHeaders = [_header(id: 500, unread: false)];
+
+        final container = ProviderContainer(
+          overrides: [
+            appDatabaseProvider.overrideWithValue(db),
+            smartschoolAuthProvider.overrideWith(
+              () => _FakeAuthController(connectedAfterConnect: true),
+            ),
+            smartschoolMessagesProvider.overrideWith(
+              () => _FakeMessagesController(
+                onGetHeaders: (box) async =>
+                    box == SmartschoolBoxType.inbox ? inboxHeaders : sentHeaders,
+                // Returning [] from getMessage signals self-sent for the sent box.
+                onGetMessage: (_) async => const [],
+              ),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        final notifier = container.read(smartschoolInboxProvider.notifier);
+        await notifier.refreshInboxAndGetHeaders();
+
+        // Sent message 500 should have been discarded.
+        final sentRow = await db.messagesDao.findMessage(
+          source: 'smartschool',
+          externalId: '500',
+        );
+        expect(sentRow, isNull);
+
+        // Status log should contain a "self-sent, discarded" info entry.
+        final statusEntries = container.read(statusProvider);
+        expect(
+          statusEntries.any(
+            (entry) =>
+                entry.type == StatusEntryType.info &&
+                entry.message.contains('self-sent, discarded'),
+          ),
+          isTrue,
+        );
+      },
+    );
+
+    test(
       'refreshInboxAndGetHeaders maps parse error to friendly status message',
       () async {
         final db = AppDatabase(NativeDatabase.memory());

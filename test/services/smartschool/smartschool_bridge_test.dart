@@ -123,6 +123,102 @@ void main() {
       await bridge.stopInboxEventDrivenDetection();
     });
   });
+
+  group('SmartschoolBridge.getMessage — sent box', () {
+    test('calls getSentMessageRecipients for sent box', () async {
+      final messages = _FakeMessagesApi();
+      messages.messageResult = _fullMessage(1);
+      messages.sentRecipientsResult = (
+        [
+          const MessageSearchUser(
+            userId: 42,
+            displayName: 'Steven Claes',
+            ssId: 7,
+          ),
+        ],
+        [],
+      );
+      final bridge = SmartschoolBridge.forTesting(
+        session: _FakeSessionApi(),
+        messages: messages,
+      );
+
+      final details = await bridge.getMessage(
+        1,
+        boxType: SmartschoolBoxType.sent,
+      );
+
+      expect(details, hasLength(1));
+      expect(messages.getSentRecipientsCalls, [1]);
+    });
+
+    test(
+      'returns empty list when getSentMessageRecipients is empty (self-sent)',
+      () async {
+        final messages = _FakeMessagesApi();
+        messages.messageResult = _fullMessage(2);
+        // sentRecipientsResult defaults to empty
+        final bridge = SmartschoolBridge.forTesting(
+          session: _FakeSessionApi(),
+          messages: messages,
+        );
+
+        final details = await bridge.getMessage(
+          2,
+          boxType: SmartschoolBoxType.sent,
+        );
+
+        expect(details, isEmpty);
+      },
+    );
+
+    test('does not call getSentMessageRecipients for inbox box', () async {
+      final messages = _FakeMessagesApi();
+      messages.messageResult = _fullMessage(3);
+      final bridge = SmartschoolBridge.forTesting(
+        session: _FakeSessionApi(),
+        messages: messages,
+      );
+
+      await bridge.getMessage(3, boxType: SmartschoolBoxType.inbox);
+
+      expect(messages.getSentRecipientsCalls, isEmpty);
+    });
+
+    test('strips +/- prefix from receiver display names', () async {
+      final messages = _FakeMessagesApi();
+      messages.messageResult = _fullMessage(
+        4,
+        receivers: ['+Steven Claes', '-Bob Smith', 'No Prefix'],
+      );
+      messages.sentRecipientsResult = (
+        [
+          const MessageSearchUser(
+            userId: 1,
+            displayName: 'Steven Claes',
+            ssId: 0,
+          ),
+        ],
+        [],
+      );
+      final bridge = SmartschoolBridge.forTesting(
+        session: _FakeSessionApi(),
+        messages: messages,
+      );
+
+      final details = await bridge.getMessage(
+        4,
+        boxType: SmartschoolBoxType.sent,
+      );
+
+      expect(details, hasLength(1));
+      expect(details.first.receivers.map((r) => r.displayName).toList(), [
+        'Steven Claes',
+        'Bob Smith',
+        'No Prefix',
+      ]);
+    });
+  });
 }
 
 class _SetLabelCall {
@@ -159,6 +255,11 @@ class _FakeMessagesApi implements SmartschoolMessagesApi {
   final List<int> markUnreadCalls = [];
   final List<int> trashCalls = [];
   final List<_SetLabelCall> setLabelCalls = [];
+  final List<int> getSentRecipientsCalls = [];
+
+  FullMessage? messageResult;
+  (List<MessageSearchUser>, List<MessageSearchUser>) sentRecipientsResult =
+      (<MessageSearchUser>[], <MessageSearchUser>[]);
 
   @override
   Future<void> markRead(int messageId) async {
@@ -199,13 +300,20 @@ class _FakeMessagesApi implements SmartschoolMessagesApi {
     required BoxType boxType,
     required bool includeAllRecipients,
   }) async {
-    return null;
+    return messageResult;
   }
 
   @override
   Future<(List<MessageSearchUser>, List<MessageSearchUser>)>
   getReplyAllRecipients(int messageId, {required BoxType boxType}) async {
     return (<MessageSearchUser>[], <MessageSearchUser>[]);
+  }
+
+  @override
+  Future<(List<MessageSearchUser>, List<MessageSearchUser>)>
+  getSentMessageRecipients(int messageId) async {
+    getSentRecipientsCalls.add(messageId);
+    return sentRecipientsResult;
   }
 
   @override
@@ -227,4 +335,28 @@ class _FakeMessagesApi implements SmartschoolMessagesApi {
     required String subject,
     required String bodyHtml,
   }) async {}
+}
+
+FullMessage _fullMessage(int id, {List<String> receivers = const []}) {
+  return FullMessage(
+    id: id,
+    subject: 'Subject $id',
+    date: DateTime(2026, 4, 10),
+    body: '<p>Hello</p>',
+    status: 1,
+    attachment: 0,
+    unread: false,
+    receivers: receivers,
+    ccReceivers: const [],
+    bccReceivers: const [],
+    senderPicture: '',
+    fromTeam: 0,
+    totalNrOtherToReceivers: 0,
+    totalNrOtherCcReceivers: 0,
+    totalNrOtherBccReceivers: 0,
+    canReply: true,
+    hasReply: false,
+    hasForward: false,
+    sender: 'Yvan',
+  );
 }

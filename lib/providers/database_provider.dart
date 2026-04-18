@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../database/app_database.dart';
 import '../database/repositories/ai_chat_repository.dart';
 import '../database/repositories/smartschool_sync_repository.dart';
+import '../services/avatar_sync_service.dart';
 
 export '../database/app_database.dart';
 export '../database/repositories/ai_chat_repository.dart';
@@ -40,4 +41,8 @@ final inboxMessagesProvider = StreamProvider<List<Message>>(
 /// Stream provider for the unread inbox count from the local database.
 final localUnreadCountProvider = StreamProvider<int>(
   (ref) => ref.watch(smartschoolSyncRepositoryProvider).watchUnreadCount(),
+);
+
+final avatarSyncServiceProvider = Provider<AvatarSyncService>(
+  (ref) => AvatarSyncService(db: ref.watch(appDatabaseProvider), ref: ref),
 );

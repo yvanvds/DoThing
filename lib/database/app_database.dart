@@ -66,7 +66,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -75,8 +75,11 @@ class AppDatabase extends _$AppDatabase {
       await _applyFixedSchema();
     },
     onUpgrade: (m, from, to) async {
-      // Schema was reset at version 5. Delete the database file and restart
-      // the app to apply the new schema cleanly.
+      if (from < 6) {
+        await customStatement(
+          'ALTER TABLE contact_identities ADD COLUMN avatar_fetch_state TEXT',
+        );
+      }
     },
   );
 

@@ -30,6 +30,10 @@ class ContactIdentities extends Table {
   DateTimeColumn get lastSeenAt => dateTime()();
   DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
 
+  /// Tracks photo-fetch state for provider-fetched avatars (Outlook only).
+  /// null = not yet attempted; 'none' = checked, no photo available (do not retry).
+  TextColumn get avatarFetchState => text().nullable()();
+
   @override
   List<Set<Column>> get uniqueKeys => [
     {source, externalId},

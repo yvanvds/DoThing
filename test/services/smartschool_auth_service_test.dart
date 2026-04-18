@@ -97,6 +97,12 @@ class _NoopMessagesApi implements SmartschoolMessagesApi {
   }
 
   @override
+  Future<(List<MessageSearchUser>, List<MessageSearchUser>)>
+  getSentMessageRecipients(int messageId) async {
+    return (<MessageSearchUser>[], <MessageSearchUser>[]);
+  }
+
+  @override
   Future<(List<MessageSearchUser>, List<MessageSearchGroup>)>
   searchRecipientsForCompose(String query) async {
     return (<MessageSearchUser>[], <MessageSearchGroup>[]);

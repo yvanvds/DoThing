@@ -8,6 +8,20 @@ import '../../models/smartschool_message.dart';
 
 const _kSource = 'smartschool';
 
+class SyncDetailResult {
+  const SyncDetailResult({
+    required this.senderName,
+    required this.senderResolved,
+    required this.toNames,
+    required this.toResolved,
+  });
+
+  final String senderName;
+  final bool senderResolved;
+  final List<String> toNames;
+  final int toResolved;
+}
+
 /// Orchestrates persistence of Smartschool messages into the local database.
 ///
 /// Design contract:
@@ -123,6 +137,19 @@ class SmartschoolSyncRepository {
     return newHeaders;
   }
 
+  /// Delete a single message by its Smartschool external ID.
+  ///
+  /// Used to discard self-sent messages (sent-to-self) that have no recipients
+  /// other than the sender and will already appear in the inbox.
+  Future<void> discardMessage(int externalId) async {
+    final existing = await _db.messagesDao.findMessage(
+      source: _kSource,
+      externalId: externalId.toString(),
+    );
+    if (existing == null) return;
+    await _db.messagesDao.deleteMessageById(existing.id);
+  }
+
   /// Delete local headers for [mailbox] not in [activeIds].
   Future<int> deleteStaleHeaders({
     required String mailbox,
@@ -142,13 +169,20 @@ class SmartschoolSyncRepository {
   /// Also updates the FTS index with the computed body text and participant
   /// names, and refreshes [senderAvatarUrl] on the message row when the detail
   /// provides a valid picture URL.
-  Future<void> syncDetail(SmartschoolMessageDetail detail) async {
+  Future<SyncDetailResult> syncDetail(SmartschoolMessageDetail detail) async {
     final externalId = detail.id.toString();
     final existing = await _db.messagesDao.findMessage(
       source: _kSource,
       externalId: externalId,
     );
-    if (existing == null) return;
+    if (existing == null) {
+      return SyncDetailResult(
+        senderName: detail.from,
+        senderResolved: false,
+        toNames: detail.receivers.map((r) => r.displayName).toList(),
+        toResolved: 0,
+      );
+    }
 
     // Index replyAll recipients for stable-ID lookup.
     final resolvedToIndex = _indexResolvedRecipients(
@@ -188,6 +222,7 @@ class SmartschoolSyncRepository {
     }
 
     // ── To recipients ────────────────────────────────────────────────────────
+    int toResolved = 0;
     for (final recipient in detail.receivers) {
       final resolved = _takeResolvedRecipient(resolvedToIndex, recipient);
       final result = await _resolveRecipient(recipient, resolved: resolved);
@@ -200,6 +235,7 @@ class SmartschoolSyncRepository {
           ),
         );
         participantNames.add(result.displayName);
+        toResolved++;
       }
     }
 
@@ -254,6 +290,13 @@ class SmartschoolSyncRepository {
       bodyText: bodyText.isEmpty ? null : bodyText,
       participantNames: participantNames.join(' '),
     );
+
+    return SyncDetailResult(
+      senderName: detail.from,
+      senderResolved: senderResult != null,
+      toNames: detail.receivers.map((r) => r.displayName).toList(),
+      toResolved: toResolved,
+    );
   }
 
   /// Persist attachment metadata and refresh the FTS row.
@@ -305,29 +348,46 @@ class SmartschoolSyncRepository {
 
   /// Resolve [recipient] to a stable identity, preferring [resolved] for IDs.
   ///
-  /// Returns null when no stable provider ID (userId / ssId) is available.
+  /// Falls back to a local display-name lookup when no stable provider ID is
+  /// available — useful for sent-message receivers which the API returns as
+  /// display-name strings only.
+  ///
+  /// Returns null when the identity cannot be resolved at all.
   Future<_ResolvedParticipant?> _resolveRecipient(
     SmartschoolMessageRecipient recipient, {
     SmartschoolMessageRecipient? resolved,
   }) async {
     final candidate = resolved ?? recipient;
     final extId = _stableExternalId(candidate);
-    if (extId == null) return null;
 
     final name = candidate.displayName.trim().isNotEmpty
         ? candidate.displayName.trim()
         : recipient.displayName.trim();
     if (name.isEmpty) return null;
 
-    final identityId = await _db.contactsDao.upsertIdentity(
-      source: _kSource,
-      externalId: extId,
-      displayName: name,
-      avatarUrl:
-          _isValidAvatarUrl(candidate.picture) ? candidate.picture : null,
-    );
+    if (extId != null) {
+      final identityId = await _db.contactsDao.upsertIdentity(
+        source: _kSource,
+        externalId: extId,
+        displayName: name,
+        avatarUrl:
+            _isValidAvatarUrl(candidate.picture) ? candidate.picture : null,
+      );
+      return _ResolvedParticipant(identityId: identityId, displayName: name);
+    }
 
-    return _ResolvedParticipant(identityId: identityId, displayName: name);
+    // Fallback: look up an existing identity by display name.
+    // This resolves sent-message recipients that the API returns as plain
+    // strings — they will already be in the DB from inbox message syncs.
+    final existing = await _db.contactsDao.findIdentityByDisplayName(
+      source: _kSource,
+      displayName: name,
+    );
+    if (existing == null) return null;
+    return _ResolvedParticipant(
+      identityId: existing.id,
+      displayName: existing.displayName ?? name,
+    );
   }
 
   String? _stableExternalId(SmartschoolMessageRecipient r) {
