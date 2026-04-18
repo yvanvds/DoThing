@@ -39,4 +39,14 @@ class ToolResult {
   final bool isError;
   final String summary;
   final Map<String, Object?>? structured;
+
+  /// Returns a copy with [toolCallId] replaced. Used by the executor to
+  /// stamp the provider-assigned id onto the result produced by a
+  /// [ToolInvokeHandler] (handlers do not receive the id directly).
+  ToolResult withToolCallId(String id) => ToolResult(
+    toolCallId: id,
+    summary: summary,
+    isError: isError,
+    structured: structured,
+  );
 }
