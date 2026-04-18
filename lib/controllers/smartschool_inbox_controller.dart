@@ -7,6 +7,22 @@ import '../services/smartschool/smartschool_auth_controller.dart';
 import '../services/smartschool/smartschool_messages_controller.dart';
 import '../services/smartschool/smartschool_polling_controller.dart';
 
+/// True once the initial SmartSchool inbox headers retrieval completed.
+///
+/// This is only set after a successful connected fetch path runs
+/// (i.e. after `getHeaders(inbox)`), even when the result is empty.
+final smartschoolInitialInboxRetrievalDoneProvider =
+    NotifierProvider<SmartschoolInitialInboxRetrievalDoneController, bool>(
+      SmartschoolInitialInboxRetrievalDoneController.new,
+    );
+
+class SmartschoolInitialInboxRetrievalDoneController extends Notifier<bool> {
+  @override
+  bool build() => false;
+
+  void markDone() => state = true;
+}
+
 enum SmartschoolRelatedItemType { message }
 
 class SmartschoolRelatedItem {
@@ -277,6 +293,8 @@ class SmartschoolInboxController extends AsyncNotifier<int> {
       syncRepo,
       boxType: SmartschoolBoxType.inbox,
     );
+
+    ref.read(smartschoolInitialInboxRetrievalDoneProvider.notifier).markDone();
 
     // Backfill avatars for any contacts without one (fire-and-forget).
     ref.read(avatarSyncServiceProvider).scheduleSync();

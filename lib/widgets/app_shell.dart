@@ -5,8 +5,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:multi_split_view/multi_split_view.dart';
 
 import '../commands/command_bus.dart';
+import '../controllers/app_initialization_controller.dart';
 import 'chat_view.dart';
 import 'context_panel.dart';
+import 'loading_dialog.dart';
 import 'sidebar.dart';
 import 'status_terminal.dart';
 
@@ -71,6 +73,7 @@ class _AppShellState extends ConsumerState<AppShell> {
   @override
   Widget build(BuildContext context) {
     final bus = ref.read(commandBusProvider);
+    final isInitialized = ref.watch(appInitializationProvider);
     final viewport = MediaQuery.sizeOf(context);
     final chatWidth = _horizontalController.areas.first.size ?? 300;
     const minPaletteWidth = 320.0;
@@ -98,7 +101,7 @@ class _AppShellState extends ConsumerState<AppShell> {
         )
         .toList();
 
-    return CommandPalette(
+    final mainUI = CommandPalette(
       config: CommandPaletteConfig(
         // Keep the modal visually attached to the right panel's palette bar.
         top: 0,
@@ -139,5 +142,17 @@ class _AppShellState extends ConsumerState<AppShell> {
         ),
       ),
     );
+
+    // Show loading dialog during initialization
+    if (!isInitialized) {
+      return Stack(
+        children: [
+          mainUI,
+          const Positioned.fill(child: LoadingDialog()),
+        ],
+      );
+    }
+
+    return mainUI;
   }
 }
