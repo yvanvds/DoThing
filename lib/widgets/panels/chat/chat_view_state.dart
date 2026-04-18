@@ -33,6 +33,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
                     .retryLastFailed()
               : null,
         ),
+        const AgentConfirmationCard(),
         Expanded(
           child: SelectionArea(
             child: Chat(

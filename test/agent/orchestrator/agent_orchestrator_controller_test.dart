@@ -1,4 +1,5 @@
 import 'package:do_thing/agent/capabilities/capability_domain.dart';
+import 'package:do_thing/agent/executor/tool_call.dart';
 import 'package:do_thing/agent/executor/tool_result.dart';
 import 'package:do_thing/agent/orchestrator/agent_orchestrator_controller.dart';
 import 'package:do_thing/agent/orchestrator/agent_turn_state.dart';
@@ -60,6 +61,19 @@ ToolDescriptor _mailboxRead() {
     risk: ToolRiskTier.read,
     arguments: ToolArgumentSchema.empty,
     invoke: (_, _) async => const ToolResult(toolCallId: '', summary: 'ok'),
+  );
+}
+
+ToolDescriptor _mailboxPrivileged() {
+  return ToolDescriptor(
+    name: 'delete_message',
+    description: 'destructive deletion',
+    domain: CapabilityDomain.mailbox,
+    mode: ToolMode.privileged,
+    risk: ToolRiskTier.privileged,
+    arguments: ToolArgumentSchema.empty,
+    humanPreview: (args) => 'Delete message ${args['id']}',
+    invoke: (_, _) async => const ToolResult(toolCallId: '', summary: 'gone'),
   );
 }
 
@@ -237,6 +251,233 @@ void main() {
         AgentTurnPhase.awaitingClarification,
       );
     });
+
+    test(
+      'confirmationGate auto-approves non-privileged tools without pending',
+      () async {
+        final transport = _FakeTransport((_) => const Stream.empty());
+        final container = ProviderContainer(
+          overrides: [
+            toolRegistryProvider.overrideWithValue(
+              ToolRegistry([_mailboxRead()]),
+            ),
+            aiChatTransportProvider.overrideWithValue(transport),
+            aiSettingsProvider.overrideWith(
+              () => _FakeAiSettingsController(
+                settings: const AiSettings(hasApiKey: true),
+                apiKey: 'token',
+              ),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        final orchestrator = container.read(
+          agentOrchestratorControllerProvider.notifier,
+        );
+
+        final decision = await orchestrator.confirmationGate(
+          const ToolCall(
+            id: 'c1',
+            toolName: 'list_inbox_headers',
+            arguments: <String, Object?>{},
+          ),
+        );
+        expect(decision.approved, isTrue);
+        expect(
+          container.read(agentOrchestratorControllerProvider).pending,
+          isNull,
+        );
+      },
+    );
+
+    test(
+      'confirmationGate stages a pending and completes on confirmPending',
+      () async {
+        final transport = _FakeTransport((_) => const Stream.empty());
+        final container = ProviderContainer(
+          overrides: [
+            toolRegistryProvider.overrideWithValue(
+              ToolRegistry([_mailboxPrivileged()]),
+            ),
+            aiChatTransportProvider.overrideWithValue(transport),
+            aiSettingsProvider.overrideWith(
+              () => _FakeAiSettingsController(
+                settings: const AiSettings(hasApiKey: true),
+                apiKey: 'token',
+              ),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        final orchestrator = container.read(
+          agentOrchestratorControllerProvider.notifier,
+        );
+
+        final future = orchestrator.confirmationGate(
+          const ToolCall(
+            id: 'call-9',
+            toolName: 'delete_message',
+            arguments: <String, Object?>{'id': 42},
+          ),
+        );
+
+        final pending = container
+            .read(agentOrchestratorControllerProvider)
+            .pending;
+        expect(pending, isNotNull);
+        expect(pending!.id, 'call-9');
+        expect(pending.humanPreview, 'Delete message 42');
+        expect(
+          container.read(agentOrchestratorControllerProvider).phase,
+          AgentTurnPhase.awaitingConfirmation,
+        );
+
+        orchestrator.confirmPending('call-9');
+        final decision = await future;
+        expect(decision.approved, isTrue);
+        expect(
+          container.read(agentOrchestratorControllerProvider).pending,
+          isNull,
+        );
+        expect(
+          container.read(agentOrchestratorControllerProvider).phase,
+          AgentTurnPhase.executing,
+        );
+      },
+    );
+
+    test(
+      'confirmationGate returns a denied decision on cancelPending',
+      () async {
+        final transport = _FakeTransport((_) => const Stream.empty());
+        final container = ProviderContainer(
+          overrides: [
+            toolRegistryProvider.overrideWithValue(
+              ToolRegistry([_mailboxPrivileged()]),
+            ),
+            aiChatTransportProvider.overrideWithValue(transport),
+            aiSettingsProvider.overrideWith(
+              () => _FakeAiSettingsController(
+                settings: const AiSettings(hasApiKey: true),
+                apiKey: 'token',
+              ),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        final orchestrator = container.read(
+          agentOrchestratorControllerProvider.notifier,
+        );
+
+        final future = orchestrator.confirmationGate(
+          const ToolCall(
+            id: 'call-x',
+            toolName: 'delete_message',
+            arguments: <String, Object?>{'id': 99},
+          ),
+        );
+
+        orchestrator.cancelPending('call-x', reason: 'nope');
+        final decision = await future;
+        expect(decision.approved, isFalse);
+        expect(decision.reason, 'nope');
+        expect(
+          container.read(agentOrchestratorControllerProvider).pending,
+          isNull,
+        );
+      },
+    );
+
+    test(
+      'markTurnFinished resolves any pending decision as denied',
+      () async {
+        final transport = _FakeTransport((_) => const Stream.empty());
+        final container = ProviderContainer(
+          overrides: [
+            toolRegistryProvider.overrideWithValue(
+              ToolRegistry([_mailboxPrivileged()]),
+            ),
+            aiChatTransportProvider.overrideWithValue(transport),
+            aiSettingsProvider.overrideWith(
+              () => _FakeAiSettingsController(
+                settings: const AiSettings(hasApiKey: true),
+                apiKey: 'token',
+              ),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        final orchestrator = container.read(
+          agentOrchestratorControllerProvider.notifier,
+        );
+
+        final future = orchestrator.confirmationGate(
+          const ToolCall(
+            id: 'call-z',
+            toolName: 'delete_message',
+            arguments: <String, Object?>{'id': 1},
+          ),
+        );
+
+        orchestrator.markTurnFinished();
+        final decision = await future;
+        expect(decision.approved, isFalse);
+        final state = container.read(agentOrchestratorControllerProvider);
+        expect(state.pending, isNull);
+        expect(state.phase, AgentTurnPhase.idle);
+      },
+    );
+
+    test(
+      'resolveExecutorTools now includes commit and privileged tiers',
+      () async {
+        final transport = _FakeTransport(
+          (_) => _jsonShot(
+            '{"intent":"tidy",'
+            '"domains":["mailbox"],'
+            '"rationale":"",'
+            '"anticipated_max_risk":"privileged",'
+            '"needs_more_information":false,'
+            '"clarifying_question":null}',
+          ),
+        );
+        final container = ProviderContainer(
+          overrides: [
+            toolRegistryProvider.overrideWithValue(
+              ToolRegistry([_mailboxRead(), _mailboxPrivileged()]),
+            ),
+            aiChatTransportProvider.overrideWithValue(transport),
+            aiSettingsProvider.overrideWith(
+              () => _FakeAiSettingsController(
+                settings: const AiSettings(hasApiKey: true),
+                apiKey: 'token',
+              ),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        final orchestrator = container.read(
+          agentOrchestratorControllerProvider.notifier,
+        );
+
+        await orchestrator.planTurn(
+          conversationId: 'c1',
+          prompt: 'tidy inbox',
+          history: const [],
+        );
+
+        final tools = orchestrator.resolveExecutorTools();
+        expect(
+          tools.map((t) => t.name).toSet(),
+          {'list_inbox_headers', 'delete_message'},
+        );
+      },
+    );
 
     test('bindConversation resets state and clears any prior plan', () async {
       final container = ProviderContainer(

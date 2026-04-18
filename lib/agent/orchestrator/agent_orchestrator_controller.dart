@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../controllers/ai/ai_settings_controller.dart';
@@ -5,6 +7,9 @@ import '../../controllers/status_controller.dart';
 import '../../models/ai/ai_chat_models.dart';
 import '../../models/ai/ai_settings.dart';
 import '../capabilities/capability_catalog.dart';
+import '../confirmation/pending_confirmation.dart';
+import '../confirmation/tool_confirmation_decision.dart';
+import '../executor/tool_call.dart';
 import '../planner/agent_plan.dart';
 import '../planner/agent_planner_service.dart';
 import '../planner/planner_prompt.dart';
@@ -45,6 +50,11 @@ class PlannerOutcome {
 /// Phase 4 wires this to the executor; Phase 5 adds pending-confirmation
 /// handling. Splitting it out now avoids bloating [AiChatController].
 class AgentOrchestratorController extends Notifier<AgentTurnState> {
+  /// Completer resolved when the user responds to the pending
+  /// confirmation card. Held outside [state] because it is not
+  /// serializable and belongs to the live controller instance only.
+  Completer<ConfirmationDecision>? _pendingCompleter;
+
   @override
   AgentTurnState build() {
     return const AgentTurnState(conversationId: '');
@@ -54,6 +64,9 @@ class AgentOrchestratorController extends Notifier<AgentTurnState> {
   /// per-turn state. Called by [AiChatController] when the user opens,
   /// creates, or switches to a conversation.
   void bindConversation(String conversationId) {
+    _resolvePendingDecision(
+      const ConfirmationDecision.denied(reason: 'Conversation switched.'),
+    );
     state = AgentTurnState(conversationId: conversationId);
   }
 
@@ -190,21 +203,110 @@ class AgentOrchestratorController extends Notifier<AgentTurnState> {
   /// when the assistant turn finishes or is canceled, so the next turn
   /// starts from a clean slate.
   void markTurnFinished() {
-    if (state.phase == AgentTurnPhase.idle) return;
-    state = state.copyWith(phase: AgentTurnPhase.idle);
+    _resolvePendingDecision(
+      const ConfirmationDecision.denied(reason: 'Turn ended.'),
+    );
+    if (state.phase == AgentTurnPhase.idle && state.pending == null) {
+      return;
+    }
+    state = state.copyWith(
+      phase: AgentTurnPhase.idle,
+      clearPending: true,
+    );
   }
 
-  /// Phase 4 restricts the executor to read + prepare. Higher tiers
-  /// remain registered but are withheld until the confirmation flow
-  /// ships in Phase 5.
+  /// Gate consulted by the executor before invoking a tool. Privileged
+  /// tools stage a [PendingConfirmation] and block on a [Completer] the
+  /// UI resolves via [confirmPending] / [cancelPending]. All other tiers
+  /// auto-approve — commit runs silently but is still surfaced in the
+  /// status terminal by the executor.
+  Future<ConfirmationDecision> confirmationGate(ToolCall call) async {
+    final registry = ref.read(toolRegistryProvider);
+    final descriptor = registry.byName(call.toolName);
+    if (descriptor == null) {
+      return const ConfirmationDecision.approved();
+    }
+    if (!descriptor.risk.requiresConfirmation) {
+      return const ConfirmationDecision.approved();
+    }
+
+    // Reject overlapping confirmations — the executor is single-threaded
+    // per turn so this shouldn't happen, but guard against a future bug
+    // silently dropping a completer.
+    _resolvePendingDecision(
+      const ConfirmationDecision.denied(
+        reason: 'Superseded by a newer confirmation.',
+      ),
+    );
+
+    final preview = descriptor.humanPreview?.call(call.arguments)
+        ?? 'Run ${descriptor.name}';
+    final pending = PendingConfirmation(
+      id: call.id,
+      descriptor: descriptor,
+      arguments: Map<String, Object?>.unmodifiable(call.arguments),
+      humanPreview: preview,
+      risk: descriptor.risk,
+    );
+
+    final completer = Completer<ConfirmationDecision>();
+    _pendingCompleter = completer;
+    state = state.copyWith(
+      phase: AgentTurnPhase.awaitingConfirmation,
+      pending: pending,
+    );
+
+    return completer.future;
+  }
+
+  /// Approves the pending tool call. No-op when there is no pending
+  /// confirmation or the id does not match — protects against stale
+  /// button clicks after the turn has already moved on.
+  void confirmPending(String id) {
+    final pending = state.pending;
+    if (pending == null || pending.id != id) return;
+    _resolvePendingDecision(const ConfirmationDecision.approved());
+    state = state.copyWith(
+      phase: AgentTurnPhase.executing,
+      clearPending: true,
+    );
+  }
+
+  /// Denies the pending tool call. The executor receives a canceled
+  /// [ToolResult] and may either abandon the plan or propose an
+  /// alternative on the next model turn.
+  void cancelPending(String id, {String? reason}) {
+    final pending = state.pending;
+    if (pending == null || pending.id != id) return;
+    _resolvePendingDecision(
+      ConfirmationDecision.denied(
+        reason: reason ?? 'User declined this action.',
+      ),
+    );
+    state = state.copyWith(
+      phase: AgentTurnPhase.executing,
+      clearPending: true,
+    );
+  }
+
+  /// Phase 5 lifts the executor to include commit and privileged tiers.
+  /// Privileged tools pause on the confirmation gate before invoking;
+  /// commit runs silently but is surfaced in the status terminal.
   static bool _isExecutableThisPhase(ToolDescriptor tool) {
     switch (tool.risk) {
       case ToolRiskTier.read:
       case ToolRiskTier.prepare:
-        return true;
       case ToolRiskTier.commit:
       case ToolRiskTier.privileged:
-        return false;
+        return true;
+    }
+  }
+
+  void _resolvePendingDecision(ConfirmationDecision decision) {
+    final completer = _pendingCompleter;
+    _pendingCompleter = null;
+    if (completer != null && !completer.isCompleted) {
+      completer.complete(decision);
     }
   }
 

@@ -4,6 +4,7 @@ import '../../controllers/status_controller.dart';
 import '../../models/ai/ai_chat_models.dart';
 import '../../services/ai/ai_chat_transport.dart';
 import '../../services/ai/openai_chat_service.dart';
+import '../confirmation/tool_confirmation_gate.dart';
 import '../tools/tool_descriptor.dart';
 import '../tools/tool_invoker.dart';
 import 'tool_call.dart';
@@ -19,9 +20,10 @@ import 'tool_result.dart';
 /// [AiChatController] already knows how to persist. Tool invocations are
 /// handled internally — the caller never sees tool-call events.
 ///
-/// Phase 4 exposes only read and prepare tier tools; higher-risk tools
-/// are filtered out by the orchestrator before they reach this service.
-/// Phase 5 will relax that by plumbing through confirmation events.
+/// Phase 5 exposes all tiers. Privileged tools pause on the optional
+/// [ToolConfirmationGate] before invocation; commit and lower tiers
+/// auto-approve. The gate is supplied by the orchestrator so policy and
+/// UI both live outside this service.
 class AgentExecutorService {
   const AgentExecutorService(this.ref);
 
@@ -49,6 +51,7 @@ class AgentExecutorService {
     AiRequestContext? context,
     int maxIterations = 6,
     bool Function()? isCanceled,
+    ToolConfirmationGate? gate,
   }) async* {
     if (maxIterations <= 0) {
       yield const AiStreamEvent.error(
@@ -139,8 +142,21 @@ class AgentExecutorService {
       for (final call in toolCalls) {
         if (isCanceled?.call() ?? false) return;
 
-        final result = await invoker.invoke(call);
-        _surfaceToolStatus(call, result);
+        final ToolResult result;
+        if (gate != null) {
+          final decision = await gate(call);
+          if (isCanceled?.call() ?? false) return;
+          if (!decision.approved) {
+            result = ToolResult.canceled(call.id, reason: decision.reason);
+            _surfaceToolStatus(call, result);
+          } else {
+            result = await invoker.invoke(call);
+            _surfaceToolStatus(call, result);
+          }
+        } else {
+          result = await invoker.invoke(call);
+          _surfaceToolStatus(call, result);
+        }
 
         workingHistory = [
           ...workingHistory,

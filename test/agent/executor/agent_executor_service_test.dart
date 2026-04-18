@@ -1,4 +1,5 @@
 import 'package:do_thing/agent/capabilities/capability_domain.dart';
+import 'package:do_thing/agent/confirmation/tool_confirmation_decision.dart';
 import 'package:do_thing/agent/executor/agent_executor_service.dart';
 import 'package:do_thing/agent/executor/tool_call.dart';
 import 'package:do_thing/agent/executor/tool_result.dart';
@@ -93,6 +94,21 @@ ToolDescriptor _prepareTool({
     domain: CapabilityDomain.navigation,
     mode: ToolMode.prepare,
     risk: ToolRiskTier.prepare,
+    arguments: ToolArgumentSchema.empty,
+    invoke: (_, args) => invoke(args),
+  );
+}
+
+ToolDescriptor _privilegedTool({
+  required String name,
+  required Future<ToolResult> Function(Map<String, Object?> args) invoke,
+}) {
+  return ToolDescriptor(
+    name: name,
+    description: name,
+    domain: CapabilityDomain.mailbox,
+    mode: ToolMode.privileged,
+    risk: ToolRiskTier.privileged,
     arguments: ToolArgumentSchema.empty,
     invoke: (_, args) => invoke(args),
   );
@@ -415,5 +431,128 @@ void main() {
       expect(events.any((e) => e.done), isFalse);
       expect(events.any((e) => e.error != null), isFalse);
     });
+
+    test(
+      'consults the gate for privileged tools and invokes on approve',
+      () async {
+        var invoked = false;
+        final tool = _privilegedTool(
+          name: 'delete_message',
+          invoke: (_) async {
+            invoked = true;
+            return const ToolResult(
+              toolCallId: '',
+              summary: 'Deleted.',
+            );
+          },
+        );
+
+        final transport = _ScriptedTransport([
+          const [
+            AiStreamEvent.toolCall(
+              ToolCall(
+                id: 'call-1',
+                toolName: 'delete_message',
+                arguments: <String, Object?>{},
+              ),
+            ),
+            AiStreamEvent.done(),
+          ],
+          const [
+            AiStreamEvent.delta('Done.'),
+            AiStreamEvent.done(providerMessageId: 'p-end'),
+          ],
+        ]);
+
+        final container = ProviderContainer(
+          overrides: [
+            aiChatTransportProvider.overrideWithValue(transport),
+            toolRegistryProvider.overrideWithValue(ToolRegistry([tool])),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        final gateCalls = <ToolCall>[];
+        final service = container.read(agentExecutorServiceProvider);
+        await service
+            .run(
+              model: 'm',
+              apiKey: 'k',
+              baseUrl: 'https://x',
+              history: [_userMessage('kill it')],
+              tools: [tool],
+              gate: (call) async {
+                gateCalls.add(call);
+                return const ConfirmationDecision.approved();
+              },
+            )
+            .toList();
+
+        expect(gateCalls, hasLength(1));
+        expect(gateCalls.single.toolName, 'delete_message');
+        expect(invoked, isTrue);
+        expect(transport.requests, hasLength(2));
+      },
+    );
+
+    test(
+      'on gate denial, injects a canceled tool result without invoking',
+      () async {
+        var invoked = false;
+        final tool = _privilegedTool(
+          name: 'delete_message',
+          invoke: (_) async {
+            invoked = true;
+            return const ToolResult(toolCallId: '', summary: 'Deleted.');
+          },
+        );
+
+        final transport = _ScriptedTransport([
+          const [
+            AiStreamEvent.toolCall(
+              ToolCall(
+                id: 'call-1',
+                toolName: 'delete_message',
+                arguments: <String, Object?>{},
+              ),
+            ),
+            AiStreamEvent.done(),
+          ],
+          const [
+            AiStreamEvent.delta('Okay, standing down.'),
+            AiStreamEvent.done(),
+          ],
+        ]);
+
+        final container = ProviderContainer(
+          overrides: [
+            aiChatTransportProvider.overrideWithValue(transport),
+            toolRegistryProvider.overrideWithValue(ToolRegistry([tool])),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        final service = container.read(agentExecutorServiceProvider);
+        await service
+            .run(
+              model: 'm',
+              apiKey: 'k',
+              baseUrl: 'https://x',
+              history: [_userMessage('kill it')],
+              tools: [tool],
+              gate: (_) async => const ConfirmationDecision.denied(
+                reason: 'User declined.',
+              ),
+            )
+            .toList();
+
+        expect(invoked, isFalse);
+        final followUp = transport.requests[1];
+        final toolTurn = followUp.messages.firstWhere(
+          (m) => m.role == AiMessageRole.tool,
+        );
+        expect(toolTurn.content, contains('User declined.'));
+      },
+    );
   });
 }

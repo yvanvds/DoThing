@@ -18,6 +18,10 @@ enum AgentTurnPhase {
   /// Executor is running the tool loop for the active plan.
   executing,
 
+  /// Executor is paused on a privileged tool call; waiting for the user
+  /// to Confirm or Cancel via [AgentConfirmationCard].
+  awaitingConfirmation,
+
   /// Planner failed; orchestrator fell back to plain chat.
   plannerFailed,
 
