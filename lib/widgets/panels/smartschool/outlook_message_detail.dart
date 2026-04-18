@@ -21,7 +21,7 @@ import 'widgets/message_html_body_view.dart';
 class OutlookMessageDetailView extends ConsumerStatefulWidget {
   const OutlookMessageDetailView({required this.header, super.key});
 
-  final SmartschoolMessageHeader header;
+  final MessageHeader header;
 
   @override
   ConsumerState<OutlookMessageDetailView> createState() =>
@@ -38,6 +38,18 @@ class _OutlookMessageDetailViewState
   void initState() {
     super.initState();
     _loadFuture = _load();
+  }
+
+  @override
+  void didUpdateWidget(covariant OutlookMessageDetailView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.header.id != widget.header.id) {
+      setState(() {
+        _refreshing = false;
+        _downloadingAttachmentIds.clear();
+        _loadFuture = _load();
+      });
+    }
   }
 
   Future<_OutlookDetailPayload?> _load() async {
@@ -623,16 +635,18 @@ class _OutlookMessageDetailViewState
 
   String _senderName(_OutlookDetailPayload payload) {
     return payload.participants
-        .where((p) => p.role == 'sender' && p.displayName.trim().isNotEmpty)
-        .map((p) => p.displayName)
-        .firstOrNull ?? widget.header.from;
+            .where((p) => p.role == 'sender' && p.displayName.trim().isNotEmpty)
+            .map((p) => p.displayName)
+            .firstOrNull ??
+        widget.header.from;
   }
 
   _MessageBodyState _messageBody(OutlookBodyContent? content) {
     if (content == null) {
       return const _MessageBodyState(
         bodyRaw: '',
-        plainBody: '(Body not available — click Refresh to fetch from Outlook.)',
+        plainBody:
+            '(Body not available — click Refresh to fetch from Outlook.)',
         hasHtml: false,
       );
     }

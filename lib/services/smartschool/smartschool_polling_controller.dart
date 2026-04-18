@@ -15,14 +15,13 @@ import 'smartschool_messages_controller.dart';
 ///     bridge and calls [syncDetail] so that stable identities and participant
 ///     links are resolved before the inbox view renders.
 ///  3. Accumulates truly new (unseen) headers in state for UI notification.
-class SmartschoolPollingController
-    extends Notifier<List<SmartschoolMessageHeader>> {
+class SmartschoolPollingController extends Notifier<List<MessageHeader>> {
   final Set<int> _seenIds = {};
   bool _isPolling = false;
   SmartschoolMessagesController? _messagesController;
 
   @override
-  List<SmartschoolMessageHeader> build() {
+  List<MessageHeader> build() {
     ref.onDispose(() {
       unawaited(_stopEventDetection());
     });
@@ -53,46 +52,49 @@ class SmartschoolPollingController
           onNewHeaders: _onEventHeaders,
           onError: (error) {
             if (!ref.mounted) return;
-            ref.read(statusProvider.notifier).add(
-              StatusEntryType.warning,
-              'Smartschool event stream error: $error',
-            );
+            ref
+                .read(statusProvider.notifier)
+                .add(
+                  StatusEntryType.warning,
+                  'Smartschool event stream error: $error',
+                );
           },
         );
       } catch (error) {
         _isPolling = false;
         _messagesController = null;
         if (!ref.mounted) return;
-        ref.read(statusProvider.notifier).add(
-          StatusEntryType.warning,
-          'Smartschool event detection start failed: $error',
-        );
+        ref
+            .read(statusProvider.notifier)
+            .add(
+              StatusEntryType.warning,
+              'Smartschool event detection start failed: $error',
+            );
       }
     });
   }
 
-  Future<void> _onEventHeaders(
-    List<SmartschoolMessageHeader> allMessages,
-  ) async {
+  Future<void> _onEventHeaders(List<MessageHeader> allMessages) async {
     var foundNewMessages = false;
 
     try {
       // Persist metadata for all headers; collect which ones are brand-new.
-      List<SmartschoolMessageHeader> newlyInserted = const [];
+      List<MessageHeader> newlyInserted = const [];
       try {
         newlyInserted = await ref
             .read(smartschoolSyncRepositoryProvider)
             .syncHeaders(allMessages);
-        ref.read(statusProvider.notifier).add(
-          StatusEntryType.info,
-          'Smartschool sync: ${allMessages.length} headers scanned'
-          ' · ${newlyInserted.length} new.',
-        );
+        ref
+            .read(statusProvider.notifier)
+            .add(
+              StatusEntryType.info,
+              'Smartschool sync: ${allMessages.length} headers scanned'
+              ' · ${newlyInserted.length} new.',
+            );
       } catch (error) {
-        ref.read(statusProvider.notifier).add(
-          StatusEntryType.warning,
-          'Event local sync failed: $error',
-        );
+        ref
+            .read(statusProvider.notifier)
+            .add(StatusEntryType.warning, 'Event local sync failed: $error');
       }
 
       // Eagerly fetch and persist full detail for newly inserted messages so
@@ -117,10 +119,12 @@ class SmartschoolPollingController
           }
         }
         if (detailFailed > 0) {
-          ref.read(statusProvider.notifier).add(
-            StatusEntryType.warning,
-            'Could not resolve participants for $detailFailed/${newlyInserted.length} new messages — they will be visible once opened.',
-          );
+          ref
+              .read(statusProvider.notifier)
+              .add(
+                StatusEntryType.warning,
+                'Could not resolve participants for $detailFailed/${newlyInserted.length} new messages — they will be visible once opened.',
+              );
         }
       }
 
@@ -137,10 +141,12 @@ class SmartschoolPollingController
         state = [...state, ...unseenMessages];
 
         final msg = unseenMessages.length == 1 ? 'message' : 'messages';
-        ref.read(statusProvider.notifier).add(
-          StatusEntryType.info,
-          '📬 ${unseenMessages.length} new $msg arrived.',
-        );
+        ref
+            .read(statusProvider.notifier)
+            .add(
+              StatusEntryType.info,
+              '📬 ${unseenMessages.length} new $msg arrived.',
+            );
 
         final notifier = ref.read(systemNotificationServiceProvider);
         for (final message in unseenMessages) {
@@ -183,5 +189,6 @@ class SmartschoolPollingController
 }
 
 final smartschoolPollingProvider =
-    NotifierProvider<SmartschoolPollingController,
-        List<SmartschoolMessageHeader>>(SmartschoolPollingController.new);
+    NotifierProvider<SmartschoolPollingController, List<MessageHeader>>(
+      SmartschoolPollingController.new,
+    );

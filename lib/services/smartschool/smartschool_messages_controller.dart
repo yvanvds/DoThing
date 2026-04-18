@@ -3,7 +3,7 @@ import 'dart:async';
 
 import '../../controllers/status_controller.dart';
 import '../../models/smartschool_message.dart';
-export '../../models/smartschool_message.dart' show SmartschoolMessageHeader;
+export '../../models/smartschool_message.dart' show MessageHeader;
 import 'smartschool_auth_controller.dart';
 import 'smartschool_bridge.dart';
 
@@ -26,7 +26,7 @@ class SmartschoolMessagesController extends Notifier<void> {
   /// Fetch message headers for the given [boxType].
   ///
   /// Pass [alreadySeenIds] to only receive new (unseen) messages.
-  Future<List<SmartschoolMessageHeader>> getHeaders({
+  Future<List<MessageHeader>> getHeaders({
     SmartschoolBoxType boxType = SmartschoolBoxType.inbox,
     List<int> alreadySeenIds = const [],
   }) async {
@@ -111,8 +111,7 @@ class SmartschoolMessagesController extends Notifier<void> {
 
   Future<void> startEventDrivenInboxDetection({
     required Iterable<int> seenIds,
-    required FutureOr<void> Function(List<SmartschoolMessageHeader>)
-    onNewHeaders,
+    required FutureOr<void> Function(List<MessageHeader>) onNewHeaders,
     void Function(Object error)? onError,
   }) async {
     await _bridge.startInboxEventDrivenDetection(

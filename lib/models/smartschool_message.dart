@@ -25,8 +25,8 @@ enum SmartschoolMessageLabel {
 /// A single message header from the inbox / sent / etc. listing.
 ///
 /// All fields map directly to the Python `ShortMessage` attributes.
-class SmartschoolMessageHeader {
-  const SmartschoolMessageHeader({
+class MessageHeader {
+  const MessageHeader({
     required this.id,
     this.source = 'smartschool',
     required this.from,
@@ -84,8 +84,8 @@ class SmartschoolMessageHeader {
   /// ISO-8601 string of the scheduled send date, or null.
   final String? sendDate;
 
-  factory SmartschoolMessageHeader.fromJson(Map<String, dynamic> json) {
-    return SmartschoolMessageHeader(
+  factory MessageHeader.fromJson(Map<String, dynamic> json) {
+    return MessageHeader(
       id: json['id'] as int,
       source: 'smartschool',
       from: json['from'] as String? ?? '',
@@ -383,7 +383,7 @@ class SmartschoolMessageThread {
   final bool hasReply;
 
   /// Individual message headers, newest first.
-  final List<SmartschoolMessageHeader> messages;
+  final List<MessageHeader> messages;
 
   factory SmartschoolMessageThread.fromJson(Map<String, dynamic> json) {
     final rawMessages = json['messages'] as List<dynamic>? ?? [];
@@ -396,7 +396,7 @@ class SmartschoolMessageThread {
       hasReply: json['has_reply'] as bool? ?? false,
       messages: rawMessages
           .cast<Map<String, dynamic>>()
-          .map(SmartschoolMessageHeader.fromJson)
+          .map(MessageHeader.fromJson)
           .toList(),
     );
   }

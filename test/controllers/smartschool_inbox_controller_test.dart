@@ -35,15 +35,14 @@ class _FakeAuthController extends SmartschoolAuthController {
 class _FakeMessagesController extends SmartschoolMessagesController {
   _FakeMessagesController({required this.onGetHeaders, this.onGetMessage});
 
-  final Future<List<SmartschoolMessageHeader>> Function(SmartschoolBoxType)
-  onGetHeaders;
+  final Future<List<MessageHeader>> Function(SmartschoolBoxType) onGetHeaders;
   final Future<List<SmartschoolMessageDetail>> Function(int)? onGetMessage;
 
   @override
   void build() {}
 
   @override
-  Future<List<SmartschoolMessageHeader>> getHeaders({
+  Future<List<MessageHeader>> getHeaders({
     SmartschoolBoxType boxType = SmartschoolBoxType.inbox,
     List<int> alreadySeenIds = const [],
   }) {
@@ -68,13 +67,13 @@ class _FakeMessagesController extends SmartschoolMessagesController {
   }
 }
 
-SmartschoolMessageHeader _header({
+MessageHeader _header({
   required int id,
   required bool unread,
   String from = 'Sender',
   String date = '2026-04-10T12:00:00Z',
 }) {
-  return SmartschoolMessageHeader(
+  return MessageHeader(
     id: id,
     from: from,
     fromImage: '',
@@ -274,8 +273,9 @@ void main() {
             ),
             smartschoolMessagesProvider.overrideWith(
               () => _FakeMessagesController(
-                onGetHeaders: (box) async =>
-                    box == SmartschoolBoxType.inbox ? inboxHeaders : sentHeaders,
+                onGetHeaders: (box) async => box == SmartschoolBoxType.inbox
+                    ? inboxHeaders
+                    : sentHeaders,
                 // Returning [] from getMessage signals self-sent for the sent box.
                 onGetMessage: (_) async => const [],
               ),

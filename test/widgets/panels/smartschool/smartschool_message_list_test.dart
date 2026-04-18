@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:do_thing/controllers/smartschool_inbox_controller.dart';
 import 'package:do_thing/services/smartschool/smartschool_messages_controller.dart';
-import 'package:do_thing/widgets/panels/smartschool/smartschool_message_list.dart';
+import 'package:do_thing/widgets/panels/smartschool/message_list.dart';
 
 class _FakeInboxController extends SmartschoolInboxController {
   _FakeInboxController(this._contacts);
@@ -42,12 +42,12 @@ class _FakeMessagesController extends SmartschoolMessagesController {
   }
 }
 
-SmartschoolMessageHeader _header({
+MessageHeader _header({
   required int id,
   required String from,
   required String date,
 }) {
-  return SmartschoolMessageHeader(
+  return MessageHeader(
     id: id,
     from: from,
     fromImage: '',
@@ -80,9 +80,7 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
-        child: const MaterialApp(
-          home: Scaffold(body: SmartschoolMessageList()),
-        ),
+        child: const MaterialApp(home: Scaffold(body: MessageList())),
       ),
     );
 
@@ -143,9 +141,7 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
-        child: const MaterialApp(
-          home: Scaffold(body: SmartschoolMessageList()),
-        ),
+        child: const MaterialApp(home: Scaffold(body: MessageList())),
       ),
     );
 
@@ -221,9 +217,7 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
-        child: const MaterialApp(
-          home: Scaffold(body: SmartschoolMessageList()),
-        ),
+        child: const MaterialApp(home: Scaffold(body: MessageList())),
       ),
     );
 
@@ -276,9 +270,7 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
-        child: const MaterialApp(
-          home: Scaffold(body: SmartschoolMessageList()),
-        ),
+        child: const MaterialApp(home: Scaffold(body: MessageList())),
       ),
     );
 
@@ -325,9 +317,7 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
-        child: const MaterialApp(
-          home: Scaffold(body: SmartschoolMessageList()),
-        ),
+        child: const MaterialApp(home: Scaffold(body: MessageList())),
       ),
     );
     await tester.pumpAndSettle();
@@ -396,9 +386,7 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
-        child: const MaterialApp(
-          home: Scaffold(body: SmartschoolMessageList()),
-        ),
+        child: const MaterialApp(home: Scaffold(body: MessageList())),
       ),
     );
     await tester.pumpAndSettle();

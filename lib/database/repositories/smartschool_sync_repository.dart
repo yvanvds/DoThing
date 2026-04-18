@@ -46,13 +46,13 @@ class SmartschoolSyncRepository {
   /// Returns headers that were newly inserted (not previously known).
   /// Updated headers (fingerprint change only) are persisted but not returned —
   /// their participants and identities are already resolved.
-  Future<List<SmartschoolMessageHeader>> syncHeaders(
-    List<SmartschoolMessageHeader> headers, {
+  Future<List<MessageHeader>> syncHeaders(
+    List<MessageHeader> headers, {
     String mailbox = 'inbox',
   }) async {
     await _db.syncStateDao.markAttempt(source: _kSource, scope: mailbox);
 
-    final newHeaders = <SmartschoolMessageHeader>[];
+    final newHeaders = <MessageHeader>[];
     DateTime? latestReceivedAt;
     String? latestExternalId;
 
@@ -201,8 +201,9 @@ class SmartschoolSyncRepository {
       resolvedToIndex,
       SmartschoolMessageRecipient(displayName: detail.from),
     );
-    final senderAvatar =
-        _isValidAvatarUrl(detail.senderPicture) ? detail.senderPicture : null;
+    final senderAvatar = _isValidAvatarUrl(detail.senderPicture)
+        ? detail.senderPicture
+        : null;
     final senderRecipient = SmartschoolMessageRecipient(
       displayName: detail.from,
       userId: senderResolved?.userId,
@@ -370,8 +371,9 @@ class SmartschoolSyncRepository {
         source: _kSource,
         externalId: extId,
         displayName: name,
-        avatarUrl:
-            _isValidAvatarUrl(candidate.picture) ? candidate.picture : null,
+        avatarUrl: _isValidAvatarUrl(candidate.picture)
+            ? candidate.picture
+            : null,
       );
       return _ResolvedParticipant(identityId: identityId, displayName: name);
     }
@@ -416,7 +418,7 @@ class SmartschoolSyncRepository {
     return matches.removeAt(0);
   }
 
-  String _headerFingerprint(SmartschoolMessageHeader h) =>
+  String _headerFingerprint(MessageHeader h) =>
       '${h.unread}|${h.deleted}|${h.hasAttachment}|${h.status}';
 
   DateTime? _parseDate(String? raw) {

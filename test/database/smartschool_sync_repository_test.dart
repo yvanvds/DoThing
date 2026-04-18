@@ -4,13 +4,13 @@ import 'package:do_thing/database/app_database.dart';
 import 'package:do_thing/database/repositories/smartschool_sync_repository.dart';
 import 'package:do_thing/models/smartschool_message.dart';
 
-SmartschoolMessageHeader _header({
+MessageHeader _header({
   required int id,
   required bool unread,
   bool hasAttachment = false,
   String mailbox = 'inbox',
 }) {
-  return SmartschoolMessageHeader(
+  return MessageHeader(
     id: id,
     from: 'Teacher',
     fromImage: 'https://example.com/avatar.png',
@@ -94,23 +94,27 @@ void main() {
       expect(second, isEmpty);
     });
 
-    test('updates existing header on fingerprint change but does not re-add to new list',
-        () async {
-      final db = AppDatabase(NativeDatabase.memory());
-      addTearDown(db.close);
-      final repo = SmartschoolSyncRepository(db);
+    test(
+      'updates existing header on fingerprint change but does not re-add to new list',
+      () async {
+        final db = AppDatabase(NativeDatabase.memory());
+        addTearDown(db.close);
+        final repo = SmartschoolSyncRepository(db);
 
-      await repo.syncHeaders([_header(id: 105, unread: true)]);
-      final updated = await repo.syncHeaders([_header(id: 105, unread: false)]);
+        await repo.syncHeaders([_header(id: 105, unread: true)]);
+        final updated = await repo.syncHeaders([
+          _header(id: 105, unread: false),
+        ]);
 
-      expect(updated, isEmpty);
+        expect(updated, isEmpty);
 
-      final row = await db.messagesDao.findMessage(
-        source: 'smartschool',
-        externalId: '105',
-      );
-      expect(row!.isRead, isTrue);
-    });
+        final row = await db.messagesDao.findMessage(
+          source: 'smartschool',
+          externalId: '105',
+        );
+        expect(row!.isRead, isTrue);
+      },
+    );
   });
 
   group('SmartschoolSyncRepository.syncDetail', () {
@@ -307,10 +311,9 @@ void main() {
       addTearDown(db.close);
       final repo = SmartschoolSyncRepository(db);
 
-      await repo.syncHeaders(
-        [_header(id: 300, unread: false)],
-        mailbox: 'sent',
-      );
+      await repo.syncHeaders([
+        _header(id: 300, unread: false),
+      ], mailbox: 'sent');
       final before = await db.messagesDao.findMessage(
         source: 'smartschool',
         externalId: '300',
@@ -331,10 +334,9 @@ void main() {
       addTearDown(db.close);
       final repo = SmartschoolSyncRepository(db);
 
-      await repo.syncHeaders(
-        [_header(id: 301, unread: false)],
-        mailbox: 'sent',
-      );
+      await repo.syncHeaders([
+        _header(id: 301, unread: false),
+      ], mailbox: 'sent');
       await repo.syncDetail(
         const SmartschoolMessageDetail(
           id: 301,
@@ -342,7 +344,9 @@ void main() {
           subject: 'Self-sent',
           body: '<p>Test</p>',
           date: '2026-04-10T12:00:00Z',
-          receivers: [SmartschoolMessageRecipient(displayName: 'Recipient', userId: 55)],
+          receivers: [
+            SmartschoolMessageRecipient(displayName: 'Recipient', userId: 55),
+          ],
           replyAllToRecipients: [
             SmartschoolMessageRecipient(displayName: 'Recipient', userId: 55),
           ],

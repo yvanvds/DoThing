@@ -18,7 +18,7 @@ class SmartschoolRelatedItem {
 
   final SmartschoolRelatedItemType type;
   final DateTime activityAt;
-  final SmartschoolMessageHeader messageHeader;
+  final MessageHeader messageHeader;
 }
 
 class SmartschoolContactInbox {
@@ -98,7 +98,7 @@ class SmartschoolInboxController extends AsyncNotifier<int> {
   ///
   /// When [showLoading] is false, keeps the current state visible while
   /// refreshing in the background.
-  Future<List<SmartschoolMessageHeader>> refreshInboxAndGetHeaders({
+  Future<List<MessageHeader>> refreshInboxAndGetHeaders({
     bool showLoading = true,
   }) async {
     if (showLoading) {
@@ -227,7 +227,7 @@ class SmartschoolInboxController extends AsyncNotifier<int> {
     return contacts;
   }
 
-  Future<List<SmartschoolMessageHeader>> _fetchInboxHeaders() async {
+  Future<List<MessageHeader>> _fetchInboxHeaders() async {
     final status = ref.read(statusProvider.notifier);
 
     await ref.read(smartschoolAuthProvider.notifier).connect();
@@ -253,7 +253,7 @@ class SmartschoolInboxController extends AsyncNotifier<int> {
 
     // Persist headers and remove stale local rows.
     final syncRepo = ref.read(smartschoolSyncRepositoryProvider);
-    List<SmartschoolMessageHeader> newlyInserted = const [];
+    List<MessageHeader> newlyInserted = const [];
     try {
       newlyInserted = await syncRepo.syncHeaders(headers);
       final activeIds = headers.map((h) => h.id.toString()).toSet();
@@ -271,7 +271,12 @@ class SmartschoolInboxController extends AsyncNotifier<int> {
     }
 
     // Eagerly fetch full detail for newly inserted messages to resolve identities.
-    await _syncDetailForHeaders(newlyInserted, status, syncRepo, boxType: SmartschoolBoxType.inbox);
+    await _syncDetailForHeaders(
+      newlyInserted,
+      status,
+      syncRepo,
+      boxType: SmartschoolBoxType.inbox,
+    );
 
     // Backfill avatars for any contacts without one (fire-and-forget).
     ref.read(avatarSyncServiceProvider).scheduleSync();
@@ -314,7 +319,12 @@ class SmartschoolInboxController extends AsyncNotifier<int> {
         'Smartschool sent sync: ${sentHeaders.length} headers scanned · ${newlySent.length} new/updated$removedSuffix.',
       );
 
-      await _syncDetailForHeaders(newlySent, status, syncRepository, boxType: SmartschoolBoxType.sent);
+      await _syncDetailForHeaders(
+        newlySent,
+        status,
+        syncRepository,
+        boxType: SmartschoolBoxType.sent,
+      );
     } catch (error) {
       status.add(StatusEntryType.warning, 'Sent bootstrap failed: $error');
     }
@@ -345,7 +355,7 @@ class SmartschoolInboxController extends AsyncNotifier<int> {
     // Persist all headers from every thread and remove stale local rows.
     final allHeaders = threads.expand((t) => t.messages).toList();
     final syncRepo = ref.read(smartschoolSyncRepositoryProvider);
-    List<SmartschoolMessageHeader> newlyInsertedThreads = const [];
+    List<MessageHeader> newlyInsertedThreads = const [];
     try {
       newlyInsertedThreads = await syncRepo.syncHeaders(allHeaders);
       final activeIds = allHeaders.map((h) => h.id.toString()).toSet();
@@ -365,7 +375,12 @@ class SmartschoolInboxController extends AsyncNotifier<int> {
       );
     }
 
-    await _syncDetailForHeaders(newlyInsertedThreads, status, syncRepo, boxType: SmartschoolBoxType.inbox);
+    await _syncDetailForHeaders(
+      newlyInsertedThreads,
+      status,
+      syncRepo,
+      boxType: SmartschoolBoxType.inbox,
+    );
 
     // Initialize polling with all seen message IDs across threads
     final messageIds = threads
@@ -379,7 +394,7 @@ class SmartschoolInboxController extends AsyncNotifier<int> {
   }
 
   Future<void> _syncDetailForHeaders(
-    List<SmartschoolMessageHeader> headers,
+    List<MessageHeader> headers,
     StatusController status,
     SmartschoolSyncRepository syncRepo, {
     required SmartschoolBoxType boxType,
@@ -447,11 +462,11 @@ class SmartschoolInboxController extends AsyncNotifier<int> {
     status.add(
       summaryParts.isEmpty ? StatusEntryType.info : StatusEntryType.warning,
       'Detail sync $label complete'
-          '${summaryParts.isEmpty ? '' : ': ${summaryParts.join(' · ')}'}.',
+      '${summaryParts.isEmpty ? '' : ': ${summaryParts.join(' · ')}'}.',
     );
   }
 
-  int _unreadCountFromHeaders(List<SmartschoolMessageHeader> headers) {
+  int _unreadCountFromHeaders(List<MessageHeader> headers) {
     // header.unread is already corrected (inverted) in SmartschoolMessageHeader.fromJson.
     return headers.where((header) => header.unread).length;
   }

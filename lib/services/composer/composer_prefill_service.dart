@@ -70,7 +70,7 @@ class ComposerPrefillService {
   }
 
   Future<DraftMessage> _buildDraft(
-    SmartschoolMessageHeader header,
+    MessageHeader header,
     ComposerPrefillAction action, {
     ComposerPrefillCancellationToken? cancellationToken,
   }) async {
@@ -91,7 +91,7 @@ class ComposerPrefillService {
   }
 
   Future<DraftMessage> _buildSmartschoolDraft(
-    SmartschoolMessageHeader header,
+    MessageHeader header,
     ComposerPrefillAction action, {
     ComposerPrefillCancellationToken? cancellationToken,
   }) async {
@@ -182,7 +182,7 @@ class ComposerPrefillService {
   }
 
   Future<DraftMessage> _buildOutlookDraft(
-    SmartschoolMessageHeader header,
+    MessageHeader header,
     ComposerPrefillAction action, {
     ComposerPrefillCancellationToken? cancellationToken,
   }) async {
@@ -213,14 +213,14 @@ class ComposerPrefillService {
     );
 
     final sender = participants.where((p) => p.role == 'sender').firstOrNull;
-    final senderName = (sender != null && sender.displayName.isNotEmpty
-            ? sender.displayName
-            : header.from)
-        .trim();
-    final senderAddress =
-        (sender != null && sender.externalId.contains('@'))
-            ? sender.externalId
-            : null;
+    final senderName =
+        (sender != null && sender.displayName.isNotEmpty
+                ? sender.displayName
+                : header.from)
+            .trim();
+    final senderAddress = (sender != null && sender.externalId.contains('@'))
+        ? sender.externalId
+        : null;
 
     final senderChip = _emailChip(name: senderName, email: senderAddress);
 
@@ -349,9 +349,7 @@ class ComposerPrefillService {
     return _smartschoolChipFromName(senderName);
   }
 
-  SmartschoolBoxType _smartschoolBoxTypeForHeader(
-    SmartschoolMessageHeader header,
-  ) {
+  SmartschoolBoxType _smartschoolBoxTypeForHeader(MessageHeader header) {
     switch (header.realBox.trim().toLowerCase()) {
       case 'draft':
         return SmartschoolBoxType.draft;

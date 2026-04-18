@@ -4,7 +4,7 @@ import 'package:do_thing/controllers/smartschool_inbox_controller.dart';
 import 'package:do_thing/services/office365/office365_mail_service.dart';
 import 'package:do_thing/services/smartschool/smartschool_messages_controller.dart';
 import 'package:do_thing/services/smartschool/smartschool_selected_message_controller.dart';
-import 'package:do_thing/widgets/panels/smartschool/smartschool_message_header_tile.dart';
+import 'package:do_thing/widgets/panels/smartschool/message_header_tile.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -25,7 +25,7 @@ void main() {
       );
       addTearDown(container.dispose);
 
-      final updatedHeaders = <SmartschoolMessageHeader>[];
+      final updatedHeaders = <MessageHeader>[];
       final removedIds = <int>[];
 
       final header = _header(id: 101, source: 'smartschool', unread: true);
@@ -35,7 +35,7 @@ void main() {
           container: container,
           child: MaterialApp(
             home: Scaffold(
-              body: SmartschoolMessageHeaderTile(
+              body: MessageHeaderTile(
                 header: header,
                 onRemoveFromList: removedIds.add,
                 onHeaderUpdated: updatedHeaders.add,
@@ -90,7 +90,7 @@ void main() {
           container: container,
           child: MaterialApp(
             home: Scaffold(
-              body: SmartschoolMessageHeaderTile(
+              body: MessageHeaderTile(
                 header: header,
                 onRemoveFromList: removedIds.add,
                 onHeaderUpdated: (_) {},
@@ -103,9 +103,7 @@ void main() {
       final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
       addTearDown(gesture.removePointer);
       await gesture.addPointer();
-      await gesture.moveTo(
-        tester.getCenter(find.byType(SmartschoolMessageHeaderTile)),
-      );
+      await gesture.moveTo(tester.getCenter(find.byType(MessageHeaderTile)));
       await tester.pumpAndSettle();
 
       await tester.tap(find.byTooltip('Archive'));
@@ -139,7 +137,7 @@ void main() {
           container: container,
           child: MaterialApp(
             home: Scaffold(
-              body: SmartschoolMessageHeaderTile(
+              body: MessageHeaderTile(
                 header: header,
                 onRemoveFromList: (_) {},
                 onHeaderUpdated: (_) {},
@@ -152,9 +150,7 @@ void main() {
       final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
       addTearDown(gesture.removePointer);
       await gesture.addPointer();
-      await gesture.moveTo(
-        tester.getCenter(find.byType(SmartschoolMessageHeaderTile)),
-      );
+      await gesture.moveTo(tester.getCenter(find.byType(MessageHeaderTile)));
       await tester.pumpAndSettle();
 
       await tester.tap(find.byTooltip('Mark as unread'), warnIfMissed: false);
@@ -189,7 +185,7 @@ void main() {
           container: container,
           child: MaterialApp(
             home: Scaffold(
-              body: SmartschoolMessageHeaderTile(
+              body: MessageHeaderTile(
                 header: header,
                 onRemoveFromList: removedIds.add,
                 onHeaderUpdated: (_) {},
@@ -202,9 +198,7 @@ void main() {
       final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
       addTearDown(gesture.removePointer);
       await gesture.addPointer();
-      await gesture.moveTo(
-        tester.getCenter(find.byType(SmartschoolMessageHeaderTile)),
-      );
+      await gesture.moveTo(tester.getCenter(find.byType(MessageHeaderTile)));
       await tester.pumpAndSettle();
 
       await tester.tap(find.byTooltip('Delete'));
@@ -232,7 +226,7 @@ void main() {
       );
       addTearDown(container.dispose);
 
-      final updatedHeaders = <SmartschoolMessageHeader>[];
+      final updatedHeaders = <MessageHeader>[];
 
       final header = _header(id: 505, source: 'smartschool', unread: false);
 
@@ -241,7 +235,7 @@ void main() {
           container: container,
           child: MaterialApp(
             home: Scaffold(
-              body: SmartschoolMessageHeaderTile(
+              body: MessageHeaderTile(
                 header: header,
                 onRemoveFromList: (_) {},
                 onHeaderUpdated: updatedHeaders.add,
@@ -254,9 +248,7 @@ void main() {
       final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
       addTearDown(gesture.removePointer);
       await gesture.addPointer();
-      await gesture.moveTo(
-        tester.getCenter(find.byType(SmartschoolMessageHeaderTile)),
-      );
+      await gesture.moveTo(tester.getCenter(find.byType(MessageHeaderTile)));
       await tester.pumpAndSettle();
 
       await tester.tap(find.byTooltip('Mark as unread'));
@@ -292,7 +284,7 @@ void main() {
           container: container,
           child: MaterialApp(
             home: Scaffold(
-              body: SmartschoolMessageHeaderTile(
+              body: MessageHeaderTile(
                 header: header,
                 onRemoveFromList: (_) {},
                 onHeaderUpdated: (_) {},
@@ -305,9 +297,7 @@ void main() {
       final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
       addTearDown(gesture.removePointer);
       await gesture.addPointer();
-      await gesture.moveTo(
-        tester.getCenter(find.byType(SmartschoolMessageHeaderTile)),
-      );
+      await gesture.moveTo(tester.getCenter(find.byType(MessageHeaderTile)));
       await tester.pumpAndSettle();
 
       await tester.tap(find.byTooltip('Archive'));
@@ -318,12 +308,12 @@ void main() {
   });
 }
 
-SmartschoolMessageHeader _header({
+MessageHeader _header({
   required int id,
   required String source,
   required bool unread,
 }) {
-  return SmartschoolMessageHeader(
+  return MessageHeader(
     id: id,
     source: source,
     from: 'Sender $id',
@@ -387,7 +377,7 @@ class _FakeInboxController extends SmartschoolInboxController {
   Future<int> build() async => 0;
 
   @override
-  Future<List<SmartschoolMessageHeader>> refreshInboxAndGetHeaders({
+  Future<List<MessageHeader>> refreshInboxAndGetHeaders({
     bool showLoading = true,
   }) async {
     refreshHeadersCalls++;

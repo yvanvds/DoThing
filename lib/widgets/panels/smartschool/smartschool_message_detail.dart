@@ -26,7 +26,7 @@ import 'widgets/message_html_body_view.dart';
 class SmartschoolMessageDetailView extends ConsumerWidget {
   const SmartschoolMessageDetailView({required this.header, super.key});
 
-  final SmartschoolMessageHeader header;
+  final MessageHeader header;
 
   Future<_MessageDetailPayload> _loadPayload(
     WidgetRef ref,

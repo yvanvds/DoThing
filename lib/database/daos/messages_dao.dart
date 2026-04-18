@@ -69,15 +69,14 @@ class MessagesDao extends DatabaseAccessor<AppDatabase>
     required bool isRead,
     required bool isArchived,
     required bool isDeleted,
-  }) =>
-      (update(messages)..where((t) => t.id.equals(id))).write(
-        MessagesCompanion(
-          isRead: Value(isRead),
-          isArchived: Value(isArchived),
-          isDeleted: Value(isDeleted),
-          updatedAt: Value(DateTime.now()),
-        ),
-      );
+  }) => (update(messages)..where((t) => t.id.equals(id))).write(
+    MessagesCompanion(
+      isRead: Value(isRead),
+      isArchived: Value(isArchived),
+      isDeleted: Value(isDeleted),
+      updatedAt: Value(DateTime.now()),
+    ),
+  );
 
   Stream<List<Message>> watchInbox({String source = 'smartschool'}) =>
       (select(messages)
@@ -110,10 +109,9 @@ class MessagesDao extends DatabaseAccessor<AppDatabase>
     int messageId,
     List<MessageParticipantsCompanion> rows,
   ) async {
-    await (delete(messageParticipants)..where(
-          (t) => t.messageId.equals(messageId),
-        ))
-        .go();
+    await (delete(
+      messageParticipants,
+    )..where((t) => t.messageId.equals(messageId))).go();
     if (rows.isNotEmpty) {
       await batch((b) => b.insertAll(messageParticipants, rows));
     }
@@ -254,7 +252,7 @@ class MessagesDao extends DatabaseAccessor<AppDatabase>
   /// Return message headers related to a contact, newest first.
   ///
   /// Includes any participant role (sender/to/cc/bcc), excluding deleted/archived.
-  Future<List<SmartschoolMessageHeader>> getInboxHeadersForContact(
+  Future<List<MessageHeader>> getInboxHeadersForContact(
     int contactId, {
     String? source,
     bool onlySelfSentToSelf = false,
@@ -336,7 +334,7 @@ class MessagesDao extends DatabaseAccessor<AppDatabase>
       final activityRaw = row.data['activity_at'];
       final activityAt = _parseSqlDateTime(activityRaw).toIso8601String();
 
-      return SmartschoolMessageHeader(
+      return MessageHeader(
         id: messageId,
         source: row.read<String>('source'),
         from: row.read<String>('sender_name'),
@@ -390,14 +388,12 @@ class MessagesDao extends DatabaseAccessor<AppDatabase>
 
   Future<void> deleteMessageById(int id) => transaction(() async {
     await customStatement('DELETE FROM message_fts WHERE rowid = ?', [id]);
-    await (delete(messageParticipants)..where(
-          (t) => t.messageId.equals(id),
-        ))
-        .go();
-    await (delete(attachedDatabase.messageAttachments)..where(
-          (t) => t.messageId.equals(id),
-        ))
-        .go();
+    await (delete(
+      messageParticipants,
+    )..where((t) => t.messageId.equals(id))).go();
+    await (delete(
+      attachedDatabase.messageAttachments,
+    )..where((t) => t.messageId.equals(id))).go();
     await (delete(messages)..where((t) => t.id.equals(id))).go();
   });
 
@@ -407,18 +403,20 @@ class MessagesDao extends DatabaseAccessor<AppDatabase>
     required String mailbox,
     required Set<String> activeExternalIds,
   }) async {
-    final allRows = await (selectOnly(messages)
-          ..addColumns([messages.id, messages.externalId])
-          ..where(
-            messages.source.equals(source) & messages.mailbox.equals(mailbox),
-          ))
-        .map(
-          (row) => (
-            id: row.read(messages.id)!,
-            externalId: row.read(messages.externalId)!,
-          ),
-        )
-        .get();
+    final allRows =
+        await (selectOnly(messages)
+              ..addColumns([messages.id, messages.externalId])
+              ..where(
+                messages.source.equals(source) &
+                    messages.mailbox.equals(mailbox),
+              ))
+            .map(
+              (row) => (
+                id: row.read(messages.id)!,
+                externalId: row.read(messages.externalId)!,
+              ),
+            )
+            .get();
 
     final staleIds = allRows
         .where((r) => !activeExternalIds.contains(r.externalId))
@@ -431,14 +429,12 @@ class MessagesDao extends DatabaseAccessor<AppDatabase>
       for (final id in staleIds) {
         await customStatement('DELETE FROM message_fts WHERE rowid = ?', [id]);
       }
-      await (delete(messageParticipants)..where(
-            (t) => t.messageId.isIn(staleIds),
-          ))
-          .go();
-      await (delete(attachedDatabase.messageAttachments)..where(
-            (t) => t.messageId.isIn(staleIds),
-          ))
-          .go();
+      await (delete(
+        messageParticipants,
+      )..where((t) => t.messageId.isIn(staleIds))).go();
+      await (delete(
+        attachedDatabase.messageAttachments,
+      )..where((t) => t.messageId.isIn(staleIds))).go();
       await (delete(messages)..where((t) => t.id.isIn(staleIds))).go();
     });
 

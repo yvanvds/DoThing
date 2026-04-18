@@ -8,7 +8,7 @@ import '../../../services/smartschool/smartschool_selected_message_controller.da
 import '../composer/composer_panel.dart';
 import 'outlook_message_detail.dart';
 import 'smartschool_message_detail.dart';
-import 'smartschool_message_list.dart';
+import 'message_list.dart';
 
 class MessagesPanel extends ConsumerStatefulWidget {
   const MessagesPanel({super.key});
@@ -43,7 +43,7 @@ class _MessagesPanelState extends ConsumerState<MessagesPanel> {
         if (index == 0) {
           return Container(
             color: colorScheme.surface,
-            child: const SmartschoolMessageList(),
+            child: const MessageList(),
           );
         }
 
@@ -60,7 +60,7 @@ class _MessagesPanelState extends ConsumerState<MessagesPanel> {
   Widget _buildSelectedHeaderView(
     BuildContext context,
     ColorScheme colorScheme,
-    SmartschoolMessageHeader? selectedHeader,
+    MessageHeader? selectedHeader,
   ) {
     if (selectedHeader == null) {
       return Center(

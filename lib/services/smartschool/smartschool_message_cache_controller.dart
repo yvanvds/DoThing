@@ -26,7 +26,7 @@ class SmartschoolMessageCacheController
     int messageId,
     SmartschoolBridge bridge, {
     SmartschoolSyncRepository? syncRepository,
-    SmartschoolMessageHeader? fallbackHeader,
+    MessageHeader? fallbackHeader,
   }) async {
     if (state.containsKey(messageId)) return state[messageId]!;
 
@@ -38,7 +38,10 @@ class SmartschoolMessageCacheController
       throw StateError('No message detail returned for ID $messageId');
     }
 
-    final detail = _normalizeDetail(messages.first, fallbackHeader: fallbackHeader);
+    final detail = _normalizeDetail(
+      messages.first,
+      fallbackHeader: fallbackHeader,
+    );
     state = {...state, messageId: detail};
 
     // Persist identity/participant links as a side-effect (non-fatal).
@@ -59,7 +62,7 @@ class SmartschoolMessageCacheController
 
   void clear() => state = {};
 
-  SmartschoolBoxType _boxTypeForHeader(SmartschoolMessageHeader? header) {
+  SmartschoolBoxType _boxTypeForHeader(MessageHeader? header) {
     final rawBox = (header?.realBox ?? '').trim().toLowerCase();
     return switch (rawBox) {
       'draft' => SmartschoolBoxType.draft,
@@ -72,7 +75,7 @@ class SmartschoolMessageCacheController
 
   SmartschoolMessageDetail _normalizeDetail(
     SmartschoolMessageDetail detail, {
-    SmartschoolMessageHeader? fallbackHeader,
+    MessageHeader? fallbackHeader,
   }) {
     final isSent = _isSentMailbox(fallbackHeader?.realBox);
     final fallbackSubject = fallbackHeader?.subject ?? '';
@@ -182,7 +185,9 @@ class SmartschoolMessageCacheController
   String _preferFallbackSender(String candidate, String fallback) {
     final c = candidate.trim();
     final f = fallback.trim();
-    if (c.isEmpty || _isUnavailableSender(c)) return f.isNotEmpty ? f : candidate;
+    if (c.isEmpty || _isUnavailableSender(c)) {
+      return f.isNotEmpty ? f : candidate;
+    }
     return candidate;
   }
 
@@ -202,12 +207,15 @@ class SmartschoolMessageCacheController
         n.contains('onbekend');
   }
 
-  String _normalizeLabel(String value) =>
-      value.toLowerCase().replaceAll('*', ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+  String _normalizeLabel(String value) => value
+      .toLowerCase()
+      .replaceAll('*', ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
 }
 
 final smartschoolMessageCacheProvider =
-    NotifierProvider<SmartschoolMessageCacheController,
-        Map<int, SmartschoolMessageDetail>>(
-      SmartschoolMessageCacheController.new,
-    );
+    NotifierProvider<
+      SmartschoolMessageCacheController,
+      Map<int, SmartschoolMessageDetail>
+    >(SmartschoolMessageCacheController.new);

@@ -7,8 +7,8 @@ import '../../../services/office365/office365_mail_service.dart';
 import '../../../services/smartschool/smartschool_messages_controller.dart';
 import '../../../services/smartschool/smartschool_selected_message_controller.dart';
 
-class SmartschoolMessageHeaderTile extends ConsumerStatefulWidget {
-  const SmartschoolMessageHeaderTile({
+class MessageHeaderTile extends ConsumerStatefulWidget {
+  const MessageHeaderTile({
     required this.header,
     required this.onRemoveFromList,
     required this.onHeaderUpdated,
@@ -16,18 +16,16 @@ class SmartschoolMessageHeaderTile extends ConsumerStatefulWidget {
     super.key,
   });
 
-  final SmartschoolMessageHeader header;
+  final MessageHeader header;
   final ValueChanged<int> onRemoveFromList;
-  final ValueChanged<SmartschoolMessageHeader> onHeaderUpdated;
+  final ValueChanged<MessageHeader> onHeaderUpdated;
   final bool highlightAsNew;
 
   @override
-  ConsumerState<SmartschoolMessageHeaderTile> createState() =>
-      _SmartschoolMessageHeaderTileState();
+  ConsumerState<MessageHeaderTile> createState() => _MessageHeaderTileState();
 }
 
-class _SmartschoolMessageHeaderTileState
-    extends ConsumerState<SmartschoolMessageHeaderTile> {
+class _MessageHeaderTileState extends ConsumerState<MessageHeaderTile> {
   bool _isHovered = false;
   bool _animateEntry = false;
   bool _highlightPulse = false;
@@ -43,7 +41,7 @@ class _SmartschoolMessageHeaderTileState
   }
 
   @override
-  void didUpdateWidget(covariant SmartschoolMessageHeaderTile oldWidget) {
+  void didUpdateWidget(covariant MessageHeaderTile oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!oldWidget.highlightAsNew && widget.highlightAsNew) {
       _triggerNewMessageAnimationIfNeeded();
@@ -366,11 +364,11 @@ class _SmartschoolMessageHeaderTileState
     }
   }
 
-  SmartschoolMessageHeader _copyHeaderWithUnread(
-    SmartschoolMessageHeader source, {
+  MessageHeader _copyHeaderWithUnread(
+    MessageHeader source, {
     required bool unread,
   }) {
-    return SmartschoolMessageHeader(
+    return MessageHeader(
       id: source.id,
       source: source.source,
       from: source.from,
@@ -401,7 +399,7 @@ class _ActionButtons extends StatelessWidget {
     required this.onMarkUnread,
   });
 
-  final SmartschoolMessageHeader header;
+  final MessageHeader header;
   final bool enabled;
   final VoidCallback onArchive;
   final VoidCallback onTrash;
@@ -521,7 +519,7 @@ class _ActionIconButton extends StatelessWidget {
 class _SenderAvatar extends StatelessWidget {
   const _SenderAvatar({required this.header});
 
-  final SmartschoolMessageHeader header;
+  final MessageHeader header;
 
   @override
   Widget build(BuildContext context) {

@@ -11,18 +11,16 @@ import '../../../services/office365/office365_polling_controller.dart';
 import '../../../services/smartschool/smartschool_messages_controller.dart';
 import '../../../services/smartschool/smartschool_polling_controller.dart';
 import '../../../services/smartschool/smartschool_selected_message_controller.dart';
-import 'smartschool_message_header_tile.dart';
+import 'message_header_tile.dart';
 
-class SmartschoolMessageList extends ConsumerStatefulWidget {
-  const SmartschoolMessageList({super.key});
+class MessageList extends ConsumerStatefulWidget {
+  const MessageList({super.key});
 
   @override
-  ConsumerState<SmartschoolMessageList> createState() =>
-      _SmartschoolMessageListState();
+  ConsumerState<MessageList> createState() => _MessageListState();
 }
 
-class _SmartschoolMessageListState
-    extends ConsumerState<SmartschoolMessageList> {
+class _MessageListState extends ConsumerState<MessageList> {
   bool _isLoading = true;
   bool _isRefreshing = false;
   bool _refreshInFlight = false;
@@ -160,7 +158,7 @@ class _SmartschoolMessageListState
     return keys;
   }
 
-  bool _containsHeader(SmartschoolMessageHeader header) {
+  bool _containsHeader(MessageHeader header) {
     for (final contact in _contacts) {
       if (contact.items.any(
         (item) =>
@@ -216,7 +214,7 @@ class _SmartschoolMessageListState
     }
   }
 
-  void _updateHeaderInList(SmartschoolMessageHeader updatedHeader) {
+  void _updateHeaderInList(MessageHeader updatedHeader) {
     final updatedContacts = _contacts.map((contact) {
       final updatedItems = contact.items.map((item) {
         if (item.messageHeader.id != updatedHeader.id ||
@@ -476,7 +474,7 @@ class _SmartschoolMessageListState
     }
   }
 
-  Future<void> _deleteMessageHeader(SmartschoolMessageHeader header) async {
+  Future<void> _deleteMessageHeader(MessageHeader header) async {
     if (header.source == 'smartschool') {
       await ref.read(smartschoolMessagesProvider.notifier).trash(header.id);
       return;
@@ -708,7 +706,7 @@ class _ContactTile extends StatefulWidget {
   final Future<void> Function(SmartschoolContactInbox contact) onArchiveAll;
   final Future<void> Function(SmartschoolContactInbox contact) onDeleteAll;
   final ValueChanged<int> onRemoveFromList;
-  final ValueChanged<SmartschoolMessageHeader> onHeaderUpdated;
+  final ValueChanged<MessageHeader> onHeaderUpdated;
 
   @override
   State<_ContactTile> createState() => _ContactTileState();
@@ -742,7 +740,7 @@ class _ContactTileState extends State<_ContactTile> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 for (final item in widget.contact.items)
-                  SmartschoolMessageHeaderTile(
+                  MessageHeaderTile(
                     header: item.messageHeader,
                     highlightAsNew: _isNew(item.messageHeader),
                     onRemoveFromList: widget.onRemoveFromList,
@@ -935,9 +933,9 @@ class _ContactTileState extends State<_ContactTile> {
     );
   }
 
-  bool _isNew(SmartschoolMessageHeader header) {
+  bool _isNew(MessageHeader header) {
     final state = context
-        .findAncestorStateOfType<_SmartschoolMessageListState>();
+        .findAncestorStateOfType<_MessageListState>();
     if (state == null) return false;
     return state._newMessageKeys.contains('${header.source}:${header.id}');
   }

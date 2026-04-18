@@ -40,8 +40,8 @@ class _FakeBridge implements SmartschoolBridge {
 class _QueueMessagesController extends SmartschoolMessagesController {
   _QueueMessagesController(this._batches);
 
-  final Queue<List<SmartschoolMessageHeader>> _batches;
-  FutureOr<void> Function(List<SmartschoolMessageHeader>)? _onNewHeaders;
+  final Queue<List<MessageHeader>> _batches;
+  FutureOr<void> Function(List<MessageHeader>)? _onNewHeaders;
   int startCalls = 0;
   int stopCalls = 0;
   List<int> latestSeenIds = const [];
@@ -50,7 +50,7 @@ class _QueueMessagesController extends SmartschoolMessagesController {
   void build() {}
 
   @override
-  Future<List<SmartschoolMessageHeader>> getHeaders({
+  Future<List<MessageHeader>> getHeaders({
     SmartschoolBoxType boxType = SmartschoolBoxType.inbox,
     List<int> alreadySeenIds = const [],
   }) async {
@@ -71,8 +71,7 @@ class _QueueMessagesController extends SmartschoolMessagesController {
   @override
   Future<void> startEventDrivenInboxDetection({
     required Iterable<int> seenIds,
-    required FutureOr<void> Function(List<SmartschoolMessageHeader>)
-    onNewHeaders,
+    required FutureOr<void> Function(List<MessageHeader>) onNewHeaders,
     void Function(Object error)? onError,
   }) async {
     startCalls++;
@@ -86,7 +85,7 @@ class _QueueMessagesController extends SmartschoolMessagesController {
     _onNewHeaders = null;
   }
 
-  Future<void> emitNewHeaders(List<SmartschoolMessageHeader> headers) async {
+  Future<void> emitNewHeaders(List<MessageHeader> headers) async {
     final callback = _onNewHeaders;
     if (callback == null) return;
     await callback(headers);
@@ -105,8 +104,8 @@ class _FakeSystemNotificationService extends SystemNotificationService {
   }
 }
 
-SmartschoolMessageHeader _header({required int id, required bool unread}) {
-  return SmartschoolMessageHeader(
+MessageHeader _header({required int id, required bool unread}) {
+  return MessageHeader(
     id: id,
     from: 'Teacher',
     fromImage: '',
@@ -236,7 +235,7 @@ void main() {
       final db = AppDatabase(NativeDatabase.memory());
       addTearDown(db.close);
 
-      final queuedBatches = Queue<List<SmartschoolMessageHeader>>.from([]);
+      final queuedBatches = Queue<List<MessageHeader>>.from([]);
       final fakeMessages = _QueueMessagesController(queuedBatches);
       final fakeNotifications = _FakeSystemNotificationService();
 
@@ -284,7 +283,7 @@ void main() {
       final db = AppDatabase(NativeDatabase.memory());
       addTearDown(db.close);
 
-      final queuedBatches = Queue<List<SmartschoolMessageHeader>>.from([]);
+      final queuedBatches = Queue<List<MessageHeader>>.from([]);
       final fakeMessages = _QueueMessagesController(queuedBatches);
       final fakeNotifications = _FakeSystemNotificationService();
 
@@ -315,7 +314,7 @@ void main() {
       final db = AppDatabase(NativeDatabase.memory());
       addTearDown(db.close);
 
-      final queuedBatches = Queue<List<SmartschoolMessageHeader>>.from([]);
+      final queuedBatches = Queue<List<MessageHeader>>.from([]);
       final fakeMessages = _QueueMessagesController(queuedBatches);
 
       final container = ProviderContainer(

@@ -4,7 +4,7 @@ import 'package:do_thing/models/smartschool_message.dart';
 void main() {
   group('SmartschoolMessageHeader.fromJson', () {
     test('inverts unread flag and maps attachment count', () {
-      final header = SmartschoolMessageHeader.fromJson({
+      final header = MessageHeader.fromJson({
         'id': 42,
         'from': 'Teacher',
         'from_image': 'https://example.com/avatar.png',
@@ -31,7 +31,7 @@ void main() {
     });
 
     test('uses defaults when optional fields are missing', () {
-      final header = SmartschoolMessageHeader.fromJson({'id': 7});
+      final header = MessageHeader.fromJson({'id': 7});
 
       expect(header.id, 7);
       expect(header.from, '');

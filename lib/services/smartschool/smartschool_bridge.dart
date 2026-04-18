@@ -237,7 +237,7 @@ class SmartschoolBridge {
     }
   }
 
-  Future<List<SmartschoolMessageHeader>> getMessageHeaders({
+  Future<List<MessageHeader>> getMessageHeaders({
     SmartschoolBoxType boxType = SmartschoolBoxType.inbox,
     List<int> alreadySeenIds = const [],
   }) async {
@@ -262,7 +262,7 @@ class SmartschoolBridge {
     );
     if (headers.isEmpty) return const [];
 
-    final grouped = <String, List<SmartschoolMessageHeader>>{};
+    final grouped = <String, List<MessageHeader>>{};
     for (final header in headers) {
       final key = normalizeSubjectForThreading(header.subject);
       grouped.putIfAbsent(key, () => []).add(header);
@@ -439,8 +439,7 @@ class SmartschoolBridge {
 
   Future<void> startInboxEventDrivenDetection({
     required Iterable<int> seenIds,
-    required FutureOr<void> Function(List<SmartschoolMessageHeader>)
-    onNewHeaders,
+    required FutureOr<void> Function(List<MessageHeader>) onNewHeaders,
     void Function(Object error)? onError,
   }) async {
     final eventMessages = _eventMessages;
@@ -553,8 +552,8 @@ class SmartschoolBridge {
     }
   }
 
-  SmartschoolMessageHeader _toHeader(ShortMessage m) {
-    return SmartschoolMessageHeader(
+  MessageHeader _toHeader(ShortMessage m) {
+    return MessageHeader(
       id: m.id,
       source: 'smartschool',
       from: m.sender,
