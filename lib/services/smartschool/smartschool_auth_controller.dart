@@ -122,6 +122,22 @@ class SmartschoolAuthController
           'Logged in to Smartschool on attempt #$attemptNumber after ${elapsed.inMilliseconds} ms.',
         );
         state = const AsyncData(SmartschoolConnectionState.connected);
+
+        try {
+          final user = await _bridge!.getCurrentUser();
+          final current = await ref.read(smartschoolSettingsProvider.future);
+          await ref
+              .read(smartschoolSettingsProvider.notifier)
+              .updateSettings(
+                current.copyWith(
+                  userDisplayName: user.displayName,
+                  userAvatarUrl: user.avatarUrl,
+                ),
+              );
+        } catch (_) {
+          // Non-fatal: tile falls back to 'Me' if this fails.
+        }
+
         return;
       } catch (error) {
         lastError = error;

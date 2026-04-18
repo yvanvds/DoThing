@@ -196,6 +196,23 @@ class SmartschoolBridge {
     }
   }
 
+  Future<SmartschoolUser> getCurrentUser() async {
+    final client = _client;
+    if (client == null) {
+      throw StateError('No active Smartschool client.');
+    }
+    try {
+      final user = await client.getCurrentUser();
+      return SmartschoolUser(
+        id: user.id,
+        displayName: user.displayName,
+        avatarUrl: user.avatarUrl?.replaceAll(r'\/', '/'),
+      );
+    } catch (error) {
+      throw SmartschoolBridgeException(error.toString());
+    }
+  }
+
   Future<bool> ping() async {
     try {
       await _session.ensureAuthenticated();

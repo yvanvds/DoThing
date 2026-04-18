@@ -44,6 +44,8 @@ class SmartschoolSettingsController extends AsyncNotifier<SmartschoolSettings> {
         url: data['url'] as String? ?? '',
         mfaSecret:
             data['mfaSecret'] as String? ?? data['birthday'] as String? ?? '',
+        userDisplayName: data['userDisplayName'] as String? ?? '',
+        userAvatarUrl: data['userAvatarUrl'] as String?,
       );
     } catch (_) {
       return const SmartschoolSettings();
@@ -62,6 +64,8 @@ class SmartschoolSettingsController extends AsyncNotifier<SmartschoolSettings> {
         'password': settings.password,
         'url': settings.url,
         'mfaSecret': settings.mfaSecret,
+        'userDisplayName': settings.userDisplayName,
+        'userAvatarUrl': settings.userAvatarUrl,
       });
       await file.writeAsString(payload, flush: true);
     } catch (_) {}

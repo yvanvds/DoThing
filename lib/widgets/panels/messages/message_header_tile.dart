@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'dart:async';
 
+import '../../../controllers/office365_settings_controller.dart';
 import '../../../controllers/smartschool_inbox_controller.dart';
+import '../../../controllers/smartschool_settings_controller.dart';
 import '../../../services/office365/office365_mail_service.dart';
 import '../../../services/smartschool/smartschool_messages_controller.dart';
 import '../../../services/smartschool/smartschool_selected_message_controller.dart';
@@ -33,6 +35,41 @@ class _MessageHeaderTileState extends ConsumerState<MessageHeaderTile> {
 
   bool get _isSmartschoolSource => widget.header.source == 'smartschool';
   bool get _isOutlookSource => widget.header.source == 'outlook';
+
+  String _resolveCurrentUserName() {
+    if (_isOutlookSource) {
+      final name = ref
+          .watch(office365SettingsProvider)
+          .asData
+          ?.value
+          .accountDisplayName
+          .trim();
+      if (name != null && name.isNotEmpty) return name;
+    }
+    if (_isSmartschoolSource) {
+      final name = ref
+          .watch(smartschoolSettingsProvider)
+          .asData
+          ?.value
+          .userDisplayName
+          .trim();
+      if (name != null && name.isNotEmpty) return name;
+    }
+    return 'Me';
+  }
+
+  String? _resolveCurrentUserAvatarUrl() {
+    if (_isOutlookSource) return null;
+    if (_isSmartschoolSource) {
+      return ref
+          .watch(smartschoolSettingsProvider)
+          .asData
+          ?.value
+          .userAvatarUrl
+          ?.replaceAll(r'\/', '/');
+    }
+    return null;
+  }
 
   @override
   void initState() {
@@ -85,6 +122,14 @@ class _MessageHeaderTileState extends ConsumerState<MessageHeaderTile> {
         selectedHeader?.id == header.id &&
         selectedHeader?.source == header.source;
 
+    final isSentByCurrentUser = header.realBox == 'sent';
+    final effectiveSenderName = isSentByCurrentUser
+        ? _resolveCurrentUserName()
+        : header.from;
+    final effectiveSenderImage = isSentByCurrentUser
+        ? _resolveCurrentUserAvatarUrl()
+        : null;
+
     final baseColor = isSelected
         ? colorScheme.surfaceContainerHighest
         : Colors.transparent;
@@ -118,7 +163,11 @@ class _MessageHeaderTileState extends ConsumerState<MessageHeaderTile> {
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      _SenderAvatar(header: header),
+                      _SenderAvatar(
+                        header: header,
+                        senderName: effectiveSenderName,
+                        overrideImageUrl: effectiveSenderImage,
+                      ),
                       const SizedBox(width: 10),
                       Expanded(
                         child: Column(
@@ -158,7 +207,7 @@ class _MessageHeaderTileState extends ConsumerState<MessageHeaderTile> {
                                 const SizedBox(width: 6),
                                 Expanded(
                                   child: Text(
-                                    header.from,
+                                    effectiveSenderName,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
@@ -461,10 +510,10 @@ class _SourceBadge extends StatelessWidget {
     final label = normalized == 'outlook' ? 'Outlook' : 'Smartschool';
     final background = normalized == 'outlook'
         ? colorScheme.secondaryContainer
-        : colorScheme.tertiaryContainer;
+        : const Color.fromARGB(255, 155, 54, 0);
     final foreground = normalized == 'outlook'
         ? colorScheme.onSecondaryContainer
-        : colorScheme.onTertiaryContainer;
+        : Colors.white;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -517,13 +566,21 @@ class _ActionIconButton extends StatelessWidget {
 }
 
 class _SenderAvatar extends StatelessWidget {
-  const _SenderAvatar({required this.header});
+  const _SenderAvatar({
+    required this.header,
+    required this.senderName,
+    this.overrideImageUrl,
+  });
 
   final MessageHeader header;
+  final String senderName;
+  final String? overrideImageUrl;
 
   @override
   Widget build(BuildContext context) {
-    final imageUrl = header.fromImage.trim();
+    final imageUrl = (overrideImageUrl?.trim().isNotEmpty == true
+        ? overrideImageUrl!
+        : header.fromImage.trim());
 
     if (imageUrl.isNotEmpty) {
       return ClipOval(
@@ -533,13 +590,13 @@ class _SenderAvatar extends StatelessWidget {
           height: 32,
           fit: BoxFit.cover,
           errorBuilder: (context, error, stackTrace) {
-            return _InitialsAvatar(name: header.from);
+            return _InitialsAvatar(name: senderName);
           },
         ),
       );
     }
 
-    return _InitialsAvatar(name: header.from);
+    return _InitialsAvatar(name: senderName);
   }
 }
 
