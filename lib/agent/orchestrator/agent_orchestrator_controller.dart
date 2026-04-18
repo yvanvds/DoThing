@@ -8,6 +8,9 @@ import '../capabilities/capability_catalog.dart';
 import '../planner/agent_plan.dart';
 import '../planner/agent_planner_service.dart';
 import '../planner/planner_prompt.dart';
+import '../tools/tool_descriptor.dart';
+import '../tools/tool_registry.dart';
+import '../tools/tool_risk_tier.dart';
 import 'agent_turn_state.dart';
 
 /// Return value of [AgentOrchestratorController.planTurn]. Tells the
@@ -150,12 +153,59 @@ class AgentOrchestratorController extends Notifier<AgentTurnState> {
     );
   }
 
+  /// Resolves the tools the executor may call this turn, filtered by the
+  /// most-recent plan. Returns an empty list when no plan is active, the
+  /// plan has no domains, or no domain tool survives the Phase 4 ceiling.
+  ///
+  /// Phase 4 only exposes [ToolRiskTier.read] and [ToolRiskTier.prepare]
+  /// tools — the confirmation surface for commit/privileged tiers lands
+  /// in Phase 5. The filter is applied here (not in the executor) so the
+  /// executor stays a pure tool-loop runner.
+  List<ToolDescriptor> resolveExecutorTools() {
+    final plan = state.currentPlan;
+    if (plan == null || plan.domains.isEmpty) {
+      return const <ToolDescriptor>[];
+    }
+    if (plan.needsMoreInformation) {
+      return const <ToolDescriptor>[];
+    }
+
+    final registry = ref.read(toolRegistryProvider);
+    final domainTools = registry.forDomains(plan.domains);
+    return domainTools
+        .where(_isExecutableThisPhase)
+        .toList(growable: false);
+  }
+
+  /// Flips the orchestrator into the executing phase so external
+  /// observers (future sidebar pill, status UI) can distinguish planning
+  /// from execution. No-op when the orchestrator has no active plan.
+  void markExecutionStarted() {
+    if (state.currentPlan == null) return;
+    if (state.phase == AgentTurnPhase.executing) return;
+    state = state.copyWith(phase: AgentTurnPhase.executing);
+  }
+
   /// Marks the orchestrator idle again. Called by [AiChatController]
   /// when the assistant turn finishes or is canceled, so the next turn
   /// starts from a clean slate.
   void markTurnFinished() {
     if (state.phase == AgentTurnPhase.idle) return;
     state = state.copyWith(phase: AgentTurnPhase.idle);
+  }
+
+  /// Phase 4 restricts the executor to read + prepare. Higher tiers
+  /// remain registered but are withheld until the confirmation flow
+  /// ships in Phase 5.
+  static bool _isExecutableThisPhase(ToolDescriptor tool) {
+    switch (tool.risk) {
+      case ToolRiskTier.read:
+      case ToolRiskTier.prepare:
+        return true;
+      case ToolRiskTier.commit:
+      case ToolRiskTier.privileged:
+        return false;
+    }
   }
 
   /// Picks the model used for planner calls. Phase 3 keeps this simple:

@@ -1,7 +1,13 @@
 import 'dart:async';
 
+import 'package:do_thing/agent/capabilities/capability_domain.dart';
+import 'package:do_thing/agent/executor/tool_call.dart';
+import 'package:do_thing/agent/executor/tool_result.dart';
+import 'package:do_thing/agent/tools/tool_argument_schema.dart';
 import 'package:do_thing/agent/tools/tool_descriptor.dart';
+import 'package:do_thing/agent/tools/tool_mode.dart';
 import 'package:do_thing/agent/tools/tool_registry.dart';
+import 'package:do_thing/agent/tools/tool_risk_tier.dart';
 import 'package:do_thing/controllers/ai/ai_chat_controller.dart';
 import 'package:do_thing/controllers/ai/ai_settings_controller.dart';
 import 'package:do_thing/controllers/status_controller.dart';
@@ -483,6 +489,119 @@ void main() {
       );
       expect(conv.title, 'Tell me about Dart');
     });
+
+    test(
+      'sendUserMessage routes through the executor when the plan has tools',
+      () async {
+        final db = AppDatabase(NativeDatabase.memory());
+        addTearDown(db.close);
+
+        final toolInvocations = <String>[];
+        final readTool = ToolDescriptor(
+          name: 'list_inbox_headers',
+          description: 'list inbox headers',
+          domain: CapabilityDomain.mailbox,
+          mode: ToolMode.read,
+          risk: ToolRiskTier.read,
+          arguments: ToolArgumentSchema.empty,
+          invoke: (_, _) async {
+            toolInvocations.add('list_inbox_headers');
+            return const ToolResult(
+              toolCallId: '',
+              summary: '2 headers.',
+            );
+          },
+        );
+
+        var call = 0;
+        final transport = _FakeAiTransport(
+          onStreamCompletion: (request) {
+            call++;
+            // #1 — planner (non-streaming, json_object).
+            if (request.jsonObjectResponse) {
+              return Stream.fromIterable([
+                const AiStreamEvent.delta(
+                  '{"intent":"open inbox",'
+                  '"domains":["mailbox"],'
+                  '"rationale":"triage",'
+                  '"anticipated_max_risk":"read",'
+                  '"needs_more_information":false,'
+                  '"clarifying_question":null}',
+                ),
+                const AiStreamEvent.done(),
+              ]);
+            }
+            // #2 — executor first pass: model asks for a tool call.
+            if (call == 2) {
+              return Stream.fromIterable([
+                const AiStreamEvent.toolCall(
+                  ToolCall(
+                    id: 'call-1',
+                    toolName: 'list_inbox_headers',
+                    arguments: <String, Object?>{},
+                  ),
+                ),
+                const AiStreamEvent.done(),
+              ]);
+            }
+            // #3 — executor second pass: final text after the tool ran.
+            return Stream.fromIterable([
+              const AiStreamEvent.delta('Here are your headers.'),
+              const AiStreamEvent.done(providerMessageId: 'p-final'),
+            ]);
+          },
+        );
+
+        final container = ProviderContainer(
+          overrides: [
+            appDatabaseProvider.overrideWithValue(db),
+            aiSettingsProvider.overrideWith(
+              () => _FakeAiSettingsController(
+                settings: const AiSettings(hasApiKey: true),
+                apiKey: 'token-exec',
+              ),
+            ),
+            aiChatTransportProvider.overrideWithValue(transport),
+            toolRegistryProvider.overrideWithValue(
+              ToolRegistry([readTool]),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        await container.read(aiChatControllerProvider.future);
+        await container
+            .read(aiChatControllerProvider.notifier)
+            .sendUserMessage('what is in my inbox?');
+        await _flushAsyncWork();
+        await _flushAsyncWork();
+
+        expect(toolInvocations, ['list_inbox_headers']);
+
+        // Planner call + two executor turns = three transport requests.
+        expect(transport.requests, hasLength(3));
+        expect(transport.requests[0].jsonObjectResponse, isTrue);
+        expect(transport.requests[1].tools, hasLength(1));
+        expect(
+          transport.requests[1].tools.single.name,
+          'list_inbox_headers',
+        );
+        // Second executor pass must include the tool-result message so
+        // the model can correlate by tool_call_id.
+        final followUp = transport.requests[2];
+        expect(followUp.messages.last.role, AiMessageRole.tool);
+        expect(followUp.messages.last.toolCallId, 'call-1');
+
+        final state = container.read(aiChatControllerProvider).requireValue;
+        expect(state.streamingState, AiStreamingState.completed);
+
+        final conversationId = state.conversationId;
+        final messages = await AiChatRepository(db).listMessages(conversationId);
+        expect(messages.last.role, AiMessageRole.assistant);
+        expect(messages.last.content, contains('Here are your headers.'));
+        expect(messages.last.providerMessageId, 'p-final');
+      },
+    );
 
     test(
       'sendUserMessage does not overwrite title on second message',

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_chat_core/flutter_chat_core.dart' as chat;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../agent/executor/agent_executor_service.dart';
 import '../../agent/orchestrator/agent_orchestrator_controller.dart';
 import '../../controllers/chat_controller.dart';
 import '../../controllers/status_controller.dart';
@@ -220,17 +221,33 @@ class AiChatController extends AsyncNotifier<AiChatUiState> {
         )
         .toList(growable: false);
 
-    final transport = ref.read(aiChatTransportProvider);
-    final stream = transport.streamCompletion(
-      apiKey: apiKey,
-      baseUrl: settings.baseUrl,
-      request: AiCompletionRequest(
+    final executorTools = orchestrator.resolveExecutorTools();
+
+    final Stream<AiStreamEvent> stream;
+    if (executorTools.isNotEmpty) {
+      orchestrator.markExecutionStarted();
+      final executor = ref.read(agentExecutorServiceProvider);
+      stream = executor.run(
         model: resolvedModel,
-        stream: settings.streamingEnabled,
-        messages: requestMessages,
+        apiKey: apiKey,
+        baseUrl: settings.baseUrl,
+        history: requestMessages,
+        tools: executorTools,
         context: context,
-      ),
-    );
+      );
+    } else {
+      final transport = ref.read(aiChatTransportProvider);
+      stream = transport.streamCompletion(
+        apiKey: apiKey,
+        baseUrl: settings.baseUrl,
+        request: AiCompletionRequest(
+          model: resolvedModel,
+          stream: settings.streamingEnabled,
+          messages: requestMessages,
+          context: context,
+        ),
+      );
+    }
 
     _streamSubscription = stream.listen(
       (event) => _handleStreamEvent(event, conversationId),

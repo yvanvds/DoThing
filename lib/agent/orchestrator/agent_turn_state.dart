@@ -15,6 +15,9 @@ enum AgentTurnPhase {
   /// executor (or — in Phase 3 — passing through to plain chat).
   planned,
 
+  /// Executor is running the tool loop for the active plan.
+  executing,
+
   /// Planner failed; orchestrator fell back to plain chat.
   plannerFailed,
 
