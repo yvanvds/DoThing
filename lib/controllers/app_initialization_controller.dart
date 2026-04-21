@@ -3,11 +3,29 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../controllers/smartschool_inbox_controller.dart';
 import '../services/office365/office365_polling_controller.dart';
 
+final appInitializationOverrideProvider =
+    NotifierProvider<AppInitializationOverrideController, bool>(
+      AppInitializationOverrideController.new,
+    );
+
+class AppInitializationOverrideController extends Notifier<bool> {
+  @override
+  bool build() => false;
+
+  void dismiss() => state = true;
+  void reset() => state = false;
+}
+
 /// Provides the initial polling completion state.
 ///
 /// Returns true once both Smartschool and Office365 have completed their
 /// initial sync/polling operations.
 final appInitializationProvider = Provider<bool>((ref) {
+  final dismissed = ref.watch(appInitializationOverrideProvider);
+  if (dismissed) {
+    return true;
+  }
+
   // Trigger SmartSchool inbox initialization by watching it
   // This will cause _fetchInboxHeaders to run
   ref.watch(smartschoolInboxProvider);

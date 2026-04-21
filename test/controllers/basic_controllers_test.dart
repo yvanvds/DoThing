@@ -1,10 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:do_thing/controllers/app_initialization_controller.dart';
 import 'package:do_thing/controllers/context_panel_controller.dart';
 import 'package:do_thing/controllers/settings_navigation_controller.dart';
 import 'package:do_thing/controllers/status_controller.dart';
 import 'package:do_thing/controllers/theme_mode_controller.dart';
+import 'package:do_thing/controllers/smartschool_inbox_controller.dart';
+import 'package:do_thing/services/office365/office365_polling_controller.dart';
+
+class _FakeSmartschoolInboxController extends SmartschoolInboxController {
+  @override
+  Future<int> build() async => 0;
+}
+
+class _FakeOffice365PollingController extends Office365PollingController {
+  @override
+  int build() => 0;
+}
 
 void main() {
   group('ContextPanelController', () {
@@ -68,6 +81,35 @@ void main() {
       expect(container.read(settingsNavigationProvider), 'security');
       container.read(settingsNavigationProvider.notifier).clear();
       expect(container.read(settingsNavigationProvider), isNull);
+    });
+  });
+
+  group('AppInitializationOverrideController', () {
+    test('dismisses startup blocking without requiring sync completion', () {
+      final container = ProviderContainer(
+        overrides: [
+          smartschoolInboxProvider.overrideWith(
+            _FakeSmartschoolInboxController.new,
+          ),
+          smartschoolInitialInboxRetrievalDoneProvider.overrideWith(
+            SmartschoolInitialInboxRetrievalDoneController.new,
+          ),
+          office365PollingProvider.overrideWith(
+            _FakeOffice365PollingController.new,
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      expect(container.read(appInitializationProvider), isFalse);
+
+      container.read(appInitializationOverrideProvider.notifier).dismiss();
+
+      expect(container.read(appInitializationProvider), isTrue);
+
+      container.read(appInitializationOverrideProvider.notifier).reset();
+
+      expect(container.read(appInitializationProvider), isFalse);
     });
   });
 }
