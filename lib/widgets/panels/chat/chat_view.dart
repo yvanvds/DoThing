@@ -15,6 +15,10 @@ import '../../../controllers/ai/ai_settings_controller.dart';
 import '../../../controllers/chat_controller.dart';
 import '../../../models/ai/ai_chat_models.dart';
 import '../../../models/ai/ai_settings.dart';
+import '../../../models/focus/focused_item_metadata.dart';
+import '../../../models/focus/focused_item_type.dart';
+import '../../../services/focus/chat_composer_attachment_controller.dart';
+import '../../../services/focus/focused_item_service.dart';
 import 'agent_confirmation_card.dart';
 import 'agent_tool_trace_card.dart';
 
@@ -22,6 +26,7 @@ part 'chat_view_widget.dart';
 part 'chat_view_state.dart';
 part 'chat_composer.dart';
 part 'chat_composer_state.dart';
+part 'attached_focused_item_chip.dart';
 part 'markdown_text_message.dart';
 part 'inline_code_builder.dart';
 part 'svg_code_block.dart';

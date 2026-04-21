@@ -79,8 +79,15 @@ const Map<CapabilityDomain, _CapabilityDomainMeta> _domainMetadata = {
   ),
   CapabilityDomain.system: _CapabilityDomainMeta(
     title: 'System',
-    purpose: 'Reserved for app-level diagnostics. No tools yet.',
-    exampleActions: [],
+    purpose:
+        'Inspect what the user is currently looking at in the app. Use '
+        'this to read the focused message, document, or other item '
+        'without having to know which backend owns it.',
+    exampleActions: [
+      'check whether a message or document is currently focused',
+      'read the body of the currently focused item',
+      'list participants of the currently focused message',
+    ],
   ),
 };
 

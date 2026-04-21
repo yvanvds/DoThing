@@ -1,6 +1,6 @@
 part of 'chat_view.dart';
 
-class _ChatComposerState extends State<_ChatComposer> {
+class _ChatComposerState extends ConsumerState<_ChatComposer> {
   final _key = GlobalKey();
   late final TextEditingController _textController;
   late final FocusNode _focusNode;
@@ -30,6 +30,8 @@ class _ChatComposerState extends State<_ChatComposer> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final bottomSafeArea = MediaQuery.of(context).padding.bottom;
+    final focusedItem = ref.watch(focusedItemMetadataProvider);
+    final attachment = ref.watch(chatComposerAttachmentProvider);
 
     return Positioned(
       left: 0,
@@ -41,10 +43,32 @@ class _ChatComposerState extends State<_ChatComposer> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (attachment != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+                child: _AttachedFocusedItemChip(
+                  metadata: attachment,
+                  onClear: () => ref
+                      .read(chatComposerAttachmentProvider.notifier)
+                      .clear(),
+                ),
+              ),
             Padding(
               padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
               child: Row(
                 children: [
+                  IconButton(
+                    tooltip: focusedItem == null
+                        ? 'Nothing focused to attach'
+                        : 'Attach focused ${focusedItem.type.name}: '
+                              '${focusedItem.title}',
+                    onPressed: focusedItem == null
+                        ? null
+                        : () => ref
+                              .read(chatComposerAttachmentProvider.notifier)
+                              .attach(focusedItem),
+                    icon: const Icon(Icons.attach_file),
+                  ),
                   Expanded(
                     child: TextField(
                       controller: _textController,

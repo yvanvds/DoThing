@@ -45,6 +45,7 @@ class ComposerPrefillService {
   Future<void> applyFromSelected(
     ComposerPrefillAction action, {
     ComposerPrefillCancellationToken? cancellationToken,
+    String? replyBody,
   }) async {
     _throwIfCanceled(cancellationToken);
 
@@ -57,6 +58,7 @@ class ComposerPrefillService {
       selected,
       action,
       cancellationToken: cancellationToken,
+      replyBody: replyBody,
     );
     _throwIfCanceled(cancellationToken);
 
@@ -73,6 +75,7 @@ class ComposerPrefillService {
     MessageHeader header,
     ComposerPrefillAction action, {
     ComposerPrefillCancellationToken? cancellationToken,
+    String? replyBody,
   }) async {
     _throwIfCanceled(cancellationToken);
 
@@ -81,12 +84,14 @@ class ComposerPrefillService {
         header,
         action,
         cancellationToken: cancellationToken,
+        replyBody: replyBody,
       );
     }
     return _buildSmartschoolDraft(
       header,
       action,
       cancellationToken: cancellationToken,
+      replyBody: replyBody,
     );
   }
 
@@ -94,6 +99,7 @@ class ComposerPrefillService {
     MessageHeader header,
     ComposerPrefillAction action, {
     ComposerPrefillCancellationToken? cancellationToken,
+    String? replyBody,
   }) async {
     _throwIfCanceled(cancellationToken);
 
@@ -177,6 +183,7 @@ class ComposerPrefillService {
         attachmentNames: attachmentNames,
         smartschoolBaseUrl: smartschoolBaseUrl,
         cancellationToken: cancellationToken,
+        replyBody: replyBody,
       ),
     );
   }
@@ -185,6 +192,7 @@ class ComposerPrefillService {
     MessageHeader header,
     ComposerPrefillAction action, {
     ComposerPrefillCancellationToken? cancellationToken,
+    String? replyBody,
   }) async {
     _throwIfCanceled(cancellationToken);
 
@@ -278,6 +286,7 @@ class ComposerPrefillService {
         fallbackPlainBody: plainBody,
         attachmentNames: attachmentNames,
         cancellationToken: cancellationToken,
+        replyBody: replyBody,
       ),
     );
   }
@@ -437,6 +446,7 @@ class ComposerPrefillService {
     required List<String> attachmentNames,
     String smartschoolBaseUrl = '',
     ComposerPrefillCancellationToken? cancellationToken,
+    String? replyBody,
   }) async {
     _throwIfCanceled(cancellationToken);
 
@@ -446,6 +456,16 @@ class ComposerPrefillService {
         ? '(no subject)'
         : subject.trim();
     final ops = <Map<String, dynamic>>[];
+
+    final authoredBody = replyBody?.trim() ?? '';
+    if (authoredBody.isNotEmpty) {
+      for (final line in authoredBody.split('\n')) {
+        if (line.isNotEmpty) {
+          ops.add({'insert': line});
+        }
+        ops.add({'insert': '\n'});
+      }
+    }
 
     void addText(String text, {Map<String, dynamic>? attributes}) {
       if (text.isEmpty) {

@@ -80,6 +80,7 @@ class AgentOrchestratorController extends Notifier<AgentTurnState> {
     required String conversationId,
     required String prompt,
     required List<AiChatMessageModel> history,
+    String? focusAwareness,
   }) async {
     if (state.conversationId != conversationId) {
       state = AgentTurnState(conversationId: conversationId);
@@ -136,6 +137,7 @@ class AgentOrchestratorController extends Notifier<AgentTurnState> {
       model: plannerModel,
       apiKey: apiKey,
       baseUrl: settings.baseUrl,
+      focusAwareness: focusAwareness,
     );
 
     if (!result.isSuccess) {

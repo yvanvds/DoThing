@@ -8,9 +8,13 @@ import '../../agent/orchestrator/agent_orchestrator_controller.dart';
 import '../../controllers/chat_controller.dart';
 import '../../controllers/status_controller.dart';
 import '../../models/ai/ai_chat_models.dart';
+import '../../models/focus/focused_item_content.dart';
+import '../../models/focus/focused_item_metadata.dart';
 import '../../providers/database_provider.dart';
 import '../../services/ai/ai_chat_transport.dart';
 import '../../services/ai/openai_chat_service.dart';
+import '../../services/focus/chat_composer_attachment_controller.dart';
+import '../../services/focus/focused_item_service.dart';
 import 'ai_settings_controller.dart';
 
 class AiChatUiState {
@@ -147,14 +151,56 @@ class AiChatController extends AsyncNotifier<AiChatUiState> {
       );
     }
 
+    // Resolve the user's manual attachment (if any) before building the
+    // user message so the attached body is baked into the prompt that
+    // reaches both the planner and the executor / plain-chat stream.
+    // Passing it as a separate tool result would bypass free-chat mode,
+    // where no tools run.
+    final attachmentMetadata =
+        ref.read(chatComposerAttachmentProvider);
+    FocusedItemContent? attachmentContent;
+    if (attachmentMetadata != null) {
+      try {
+        attachmentContent = await ref
+            .read(focusedItemServiceProvider)
+            .resolveContent(attachmentMetadata);
+      } catch (error) {
+        ref.read(statusProvider.notifier).add(
+              StatusEntryType.warning,
+              'Could not load attached ${attachmentMetadata.source} item: $error',
+            );
+      }
+      ref.read(chatComposerAttachmentProvider.notifier).clear();
+    }
+
+    final effectivePrompt = attachmentMetadata == null
+        ? prompt
+        : _promptWithAttachment(prompt, attachmentMetadata, attachmentContent);
+
+    final effectiveContext = context ??
+        (attachmentMetadata == null
+            ? null
+            : AiRequestContext(
+                kind: 'attached_focused_item',
+                referenceId:
+                    '${attachmentMetadata.source}:${attachmentMetadata.id}',
+                summary: attachmentMetadata.title,
+              ));
+
+    final focusedItemMetadata = ref.read(focusedItemMetadataProvider);
+    final focusAwareness = _focusAwarenessNote(
+      focused: focusedItemMetadata,
+      attached: attachmentMetadata,
+    );
+
     final userMessage = AiChatMessageModel(
       id: _nextId('u'),
       conversationId: conversationId,
       role: AiMessageRole.user,
-      content: prompt,
+      content: effectivePrompt,
       createdAt: DateTime.now(),
       status: AiMessageStatus.completed,
-      requestContext: context,
+      requestContext: effectiveContext,
     );
     await repository.upsertMessage(userMessage);
 
@@ -176,7 +222,7 @@ class AiChatController extends AsyncNotifier<AiChatUiState> {
     await ref.read(chatControllerProvider).insertMessage(assistantUi);
 
     _activeAssistantId = assistantMessage.id;
-    _activePrompt = prompt;
+    _activePrompt = effectivePrompt;
     _activeAssistantUiMessage = assistantUi;
     _streamingBuffer = '';
 
@@ -200,8 +246,9 @@ class AiChatController extends AsyncNotifier<AiChatUiState> {
         .toList(growable: false);
     final plannerOutcome = await orchestrator.planTurn(
       conversationId: conversationId,
-      prompt: prompt,
+      prompt: effectivePrompt,
       history: plannerHistory,
+      focusAwareness: focusAwareness,
     );
 
     if (plannerOutcome.preamble.isNotEmpty) {
@@ -233,7 +280,7 @@ class AiChatController extends AsyncNotifier<AiChatUiState> {
         baseUrl: settings.baseUrl,
         history: requestMessages,
         tools: executorTools,
-        context: context,
+        context: effectiveContext,
         gate: orchestrator.confirmationGate,
         onToolExecuted: orchestrator.recordToolTrace,
       );
@@ -246,7 +293,7 @@ class AiChatController extends AsyncNotifier<AiChatUiState> {
           model: resolvedModel,
           stream: settings.streamingEnabled,
           messages: requestMessages,
-          context: context,
+          context: effectiveContext,
         ),
       );
     }
@@ -561,6 +608,92 @@ class AiChatController extends AsyncNotifier<AiChatUiState> {
         isBusy: false,
       ),
     );
+  }
+
+  /// Prepends the attached item's content to [prompt] so both the
+  /// planner and the executor see it on the same turn — even in
+  /// free-chat mode where no tools run to fetch it. Intentionally terse:
+  /// the model only needs the body, not a render-friendly layout.
+  String _promptWithAttachment(
+    String prompt,
+    FocusedItemMetadata metadata,
+    FocusedItemContent? content,
+  ) {
+    final buffer = StringBuffer();
+    buffer.writeln(
+      '[Attached ${metadata.source} ${metadata.type.name}: '
+      '"${metadata.title}"]',
+    );
+    final subtitle = metadata.subtitle?.trim();
+    if (subtitle != null && subtitle.isNotEmpty) {
+      buffer.writeln('From/Subtitle: $subtitle');
+    }
+    final timestamp = metadata.timestamp;
+    if (timestamp != null) {
+      buffer.writeln('Timestamp: ${timestamp.toIso8601String()}');
+    }
+    if (content != null) {
+      if (content.participants.isNotEmpty) {
+        buffer.writeln('Participants: ${content.participants.join(', ')}');
+      }
+      if (content.attachmentNames.isNotEmpty) {
+        buffer.writeln(
+          'Attachments: ${content.attachmentNames.join(', ')}',
+        );
+      }
+      final body = content.bodyText?.trim();
+      if (body != null && body.isNotEmpty) {
+        buffer
+          ..writeln('---')
+          ..writeln(body)
+          ..writeln('---');
+      } else {
+        buffer.writeln(
+          '(Body unavailable — call get_focused_item_content if needed.)',
+        );
+      }
+    } else {
+      buffer.writeln(
+        '(Content could not be resolved — call get_focused_item_content '
+        'if needed.)',
+      );
+    }
+    buffer
+      ..writeln()
+      ..write(prompt);
+    return buffer.toString();
+  }
+
+  /// Builds the one-paragraph planner-facing awareness note. Returns
+  /// `null` when nothing is focused *and* nothing is attached — no need
+  /// to spend tokens on "nothing is focused" reminders.
+  String? _focusAwarenessNote({
+    required FocusedItemMetadata? focused,
+    required FocusedItemMetadata? attached,
+  }) {
+    if (focused == null && attached == null) return null;
+
+    final buffer = StringBuffer('FOCUS AWARENESS:');
+    if (attached != null) {
+      buffer.write(
+        ' The user has attached "${attached.title}" '
+        '(${attached.source} ${attached.type.name}, id ${attached.id}) '
+        'to this turn. Its full text is inlined in the user message; '
+        'you do not need to fetch it again.',
+      );
+    }
+    if (focused != null &&
+        (attached == null ||
+            focused.source != attached.source ||
+            focused.id != attached.id)) {
+      buffer.write(
+        ' The user is currently viewing "${focused.title}" '
+        '(${focused.source} ${focused.type.name}). '
+        'To read its body, route to the system domain and the executor '
+        'will use get_focused_item_content.',
+      );
+    }
+    return buffer.toString();
   }
 
   String _conversationTitleFromPrompt(String prompt) {

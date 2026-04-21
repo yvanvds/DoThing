@@ -53,6 +53,7 @@ class AgentPlannerService {
     required String model,
     required String apiKey,
     required String baseUrl,
+    String? focusAwareness,
     bool Function()? isCanceled,
   }) async {
     if (catalog.summaries.isEmpty) {
@@ -69,6 +70,8 @@ class AgentPlannerService {
     final systemPrompt = PlannerPrompt.systemPrompt(catalog);
     final now = DateTime.now();
 
+    final awareness = focusAwareness?.trim();
+
     final requestMessages = <AiChatMessageModel>[
       AiChatMessageModel(
         id: 'planner-system',
@@ -77,6 +80,18 @@ class AgentPlannerService {
         content: systemPrompt,
         createdAt: now,
       ),
+      // Focus awareness is appended as a *second* system message rather
+      // than folded into [systemPrompt]. The main prompt is deterministic
+      // for a given catalog — keep it cache-friendly. Awareness changes
+      // every turn and piggybacks on the same turn.
+      if (awareness != null && awareness.isNotEmpty)
+        AiChatMessageModel(
+          id: 'planner-focus',
+          conversationId: 'planner',
+          role: AiMessageRole.system,
+          content: awareness,
+          createdAt: now,
+        ),
       for (final entry in _historyForPlanner(history))
         AiChatMessageModel(
           id: 'planner-${entry.id}',

@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../capabilities/capability_domain.dart';
 import 'definitions/composer_tools.dart';
+import 'definitions/focus_tools.dart';
 import 'definitions/mailbox_tools.dart';
 import 'definitions/navigation_tools.dart';
 import 'tool_descriptor.dart';
@@ -77,6 +78,7 @@ List<ToolDescriptor> buildToolRegistry() => [
   ...mailboxTools(),
   ...navigationTools(),
   ...composerTools(),
+  ...focusTools(),
 ];
 
 /// Provides the app-wide [ToolRegistry].

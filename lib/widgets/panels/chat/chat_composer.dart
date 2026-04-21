@@ -1,6 +1,6 @@
 part of 'chat_view.dart';
 
-class _ChatComposer extends StatefulWidget {
+class _ChatComposer extends ConsumerStatefulWidget {
   const _ChatComposer({
     required this.selectedPreset,
     required this.complexModel,
@@ -20,5 +20,5 @@ class _ChatComposer extends StatefulWidget {
   final ValueChanged<String> onSend;
 
   @override
-  State<_ChatComposer> createState() => _ChatComposerState();
+  ConsumerState<_ChatComposer> createState() => _ChatComposerState();
 }
